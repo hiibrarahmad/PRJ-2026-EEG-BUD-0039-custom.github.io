@@ -323,6 +323,36 @@
 		.perch-row canvas { display: block; flex: 1; }
 		#allch-chart-container canvas { display: block; width: 100%; }
 		.allch-legend { font-size: 11px; color: #aaa; }
+
+		/* ── BLE status dot ──────────────────────────────────────── */
+		.ble-status-dot {
+			display: inline-block;
+			width: 12px; height: 12px;
+			border-radius: 50%;
+			margin-left: 10px;
+			vertical-align: middle;
+			transition: background 0.4s;
+		}
+		.ble-dot-red    { background: #f44336; box-shadow: 0 0 6px #f44336; }
+		.ble-dot-yellow { background: #FFC107; box-shadow: 0 0 6px #FFC107; animation: blink 0.8s infinite; }
+		.ble-dot-green  { background: #4CAF50; box-shadow: 0 0 8px #4CAF50; }
+		@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+		/* ── BLE Monitor tab ──────────────────────────────────── */
+		.ble-info-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 14px; }
+		.ble-info-table td { padding: 4px 8px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+		.ble-info-table td:first-child { color: #aaa; width: 130px; }
+		.ble-info-table code { font-size: 11px; color: #7ec8e3; word-break: break-all; }
+		.ble-stats-row { display: flex; gap: 24px; margin-bottom: 14px; }
+		.ble-stat-box { background: #1a1a2e; border-radius: 6px; padding: 10px 18px; text-align: center; }
+		.ble-stat-val { font-size: 22px; font-weight: 700; color: #FFD700; }
+		.ble-stat-lbl { font-size: 11px; color: #888; }
+		#ble-raw-log { height: 340px; overflow-y: auto; background: #0d0d0d;
+			           border: 1px solid #333; border-radius: 4px; padding: 6px; font-family: monospace; }
+		.ble-log-entry { font-size: 11px; line-height: 1.6; border-bottom: 1px solid #1a1a1a; padding: 1px 0; }
+		.ble-log-ts  { color: #666; margin-right: 6px; }
+		.ble-log-smp { color: #48F444; margin-right: 6px; }
+		.ble-log-hex { color: #7ec8e3; word-break: break-all; }
     </style>
 
     <!-- Good Ol' JQuery -->
@@ -368,6 +398,7 @@
             	<i class="material-icons">bluetooth</i>
                 CONNECT
             </button>
+            <span id="ble-status-dot" class="ble-status-dot ble-dot-red" title="BLE Status"></span>
 
 			<button id="true-test-data" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--colored-yellow" style="margin-left: 10px;">
                 <i class="material-icons">trending_up</i>
@@ -418,6 +449,7 @@
                         <a href="#tab-nn"    class="mdl-tabs__tab is-active">&#9881; Neural Network</a>
                         <a href="#tab-allch" class="mdl-tabs__tab">&#128200; All Channels Raw</a>
                         <a href="#tab-perch" class="mdl-tabs__tab">&#128201; Per Channel Raw</a>
+                        <a href="#tab-bleinfo" class="mdl-tabs__tab">&#128268; BLE Monitor</a>
                     </div>
 
                     <!-- ── Tab 1: Neural Network + Streaming Data ────────────── -->
@@ -703,6 +735,51 @@ The export data will provide an array or neural network weight values and an act
                             </div>
                         </div>
                     </section><!-- end #tab-perch -->
+
+                    <!-- ── Tab 4: BLE Monitor ───────────────────────────────── -->
+                    <section class="mdl-tabs__panel" id="tab-bleinfo">
+                        <div class="mdl-cell mdl-cell--12-col-desktop mdl-cell--12-col-tablet mdl-cell--4-col-phone">
+                            <div class="mdl-card mdl-shadow--2dp">
+                                <div class="mdl-card__title">
+                                    <h2 class="mdl-card__title-text">&#128268; BLE Monitor</h2>
+                                    <div class="mdl-layout-spacer"></div>
+                                    <span id="ble-conn-status" style="font-size:13px;color:#aaa;">Disconnected</span>
+                                </div>
+                                <div class="mdl-card__supporting-text">
+                                    <!-- Device info table -->
+                                    <table class="ble-info-table">
+                                        <tbody id="ble-device-info">
+                                            <tr><td>Device name</td><td id="ble-device-name-val">&mdash;</td></tr>
+                                            <tr><td>Service UUID</td><td><code>0000a000-0000-1000-8000-00805f9b34fb</code></td></tr>
+                                            <tr><td>cmdRead UUID</td><td><code>0000a001-0000-1000-8000-00805f9b34fb</code></td></tr>
+                                            <tr><td>cmdWrite UUID</td><td><code>0000a002-0000-1000-8000-00805f9b34fb</code></td></tr>
+                                            <tr><td>eegData UUID</td><td><code>0000a003-0000-1000-8000-00805f9b34fb</code></td></tr>
+                                        </tbody>
+                                    </table>
+                                    <!-- Packet stats -->
+                                    <div class="ble-stats-row">
+                                        <div class="ble-stat-box">
+                                            <div class="ble-stat-val" id="ble-pkt-count">0</div>
+                                            <div class="ble-stat-lbl">Total Packets</div>
+                                        </div>
+                                        <div class="ble-stat-box">
+                                            <div class="ble-stat-val" id="ble-pkt-rate">0 pkts/s</div>
+                                            <div class="ble-stat-lbl">Packet Rate</div>
+                                        </div>
+                                        <div class="ble-stat-box">
+                                            <div class="ble-stat-val" style="font-size:14px;">27B&times;N</div>
+                                            <div class="ble-stat-lbl">Frame Format</div>
+                                        </div>
+                                    </div>
+                                    <!-- Raw hex log -->
+                                    <h6 style="margin:8px 0 4px;color:#aaa;">RAW BLE PACKETS (latest first)</h6>
+                                    <div id="ble-raw-log">
+                                        <div class="ble-log-entry" style="color:#555;">Waiting for BLE connection&hellip;</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section><!-- end #tab-bleinfo -->
 
                 </div><!-- end .mdl-tabs -->
             </div><!-- end mdl-cell--10-col -->

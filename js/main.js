@@ -58,6 +58,8 @@ class ControllerWebBluetooth {
         this.services = services;
         this.characteristics = characteristics;
         this.standardServer;
+        this.bleDevice = null;
+        this.connected = false;
     }
 
     connect() {
@@ -72,15 +74,24 @@ class ControllerWebBluetooth {
             })
             .then(device => {
                 console.log('Device discovered', device.name);
+                _this.bleDevice = device;
+                device.addEventListener('gattserverdisconnected', function() { _this.onBleDisconnected(); });
+                updateBleStatus('connecting', device.name);
                 return device.gatt.connect();
             })
             .then(server => {
                 console.log('server device: ' + Object.keys(server.device));
-
+                _this.connected = true;
+                updateBleStatus('connected', server.device.name);
+                updateBleMonitorInfo(server.device);
+                var btn = document.getElementById('connect');
+                btn.innerHTML = '<i class="material-icons">bluetooth_connected</i> CONNECTED';
+                btn.style.background = '#2e7d32';
                 this.getServices([services.controlService, ], [characteristics.commandReadCharacteristic, characteristics.commandWriteCharacteristic, characteristics.deviceDataCharacteristic], server);
             })
             .catch(error => {
-                console.log('error', error)
+                console.log('error', error);
+                updateBleStatus('error', '');
             })
     }
 
@@ -226,6 +237,7 @@ class ControllerWebBluetooth {
         const LSB_UV = (4.5 / 24.0 / 8388608.0) * 1e6; // ≈ 0.02235 µV/LSB
         const uv = ch.map(raw => (raw * LSB_UV).toFixed(3));
         console.log("[EEG µV] ch1-8: " + uv.join(", ") + "  samples/pkt: " + samples.length);
+        bleMonitorAddPacket(bytes, samples.length);
 
         state = {
             // Raw channel access (normalised 0-1)
@@ -268,6 +280,39 @@ class ControllerWebBluetooth {
     }
     onStateChange(callback) {
         _this.onStateChangeCallback = callback;
+    }
+
+    onBleDisconnected() {
+        _this.connected = false;
+        updateBleStatus('disconnected', '');
+        var btn = document.getElementById('connect');
+        btn.innerHTML = '<i class="material-icons">bluetooth_searching</i> RECONNECTING...';
+        btn.style.background = '#e65100';
+        console.log('BLE disconnected — will attempt reconnect in 1.5s');
+        setTimeout(function() { _this.reconnect(); }, 1500);
+    }
+
+    reconnect() {
+        if (!_this.bleDevice) return;
+        console.log('Attempting BLE reconnect...');
+        _this.bleDevice.gatt.connect()
+            .then(function(server) {
+                _this.connected = true;
+                updateBleStatus('connected', _this.bleDevice.name);
+                updateBleMonitorInfo(_this.bleDevice);
+                var btn = document.getElementById('connect');
+                btn.innerHTML = '<i class="material-icons">bluetooth_connected</i> CONNECTED';
+                btn.style.background = '#2e7d32';
+                _this.getServices(
+                    [services.controlService],
+                    [characteristics.commandReadCharacteristic, characteristics.commandWriteCharacteristic, characteristics.deviceDataCharacteristic],
+                    server
+                );
+            })
+            .catch(function(err) {
+                console.log('Reconnect failed:', err);
+                setTimeout(function() { _this.reconnect(); }, 3000);
+            });
     }
 }
 
@@ -652,6 +697,74 @@ $(document).ready(function() {
         })(pci);
     }
 
+    // ── Tab switch: reinit chart streaming when tab becomes visible ─────────
+    $('a[href="#tab-allch"]').on('click', function() {
+        setTimeout(function() {
+            var w = $('#allch-chart-container').width() || allChW;
+            document.getElementById('allch-canvas').width = w;
+            allChChart.streamTo(document.getElementById('allch-canvas'), 300);
+        }, 80);
+    });
+    $('a[href="#tab-perch"]').on('click', function() {
+        setTimeout(function() {
+            var cw = ($('#perch-charts-container').width() - 42) || perChW;
+            for (var ti = 0; ti < 8; ti++) {
+                document.getElementById('perch-canvas-' + ti).width = cw;
+                perChCharts[ti].streamTo(document.getElementById('perch-canvas-' + ti), 300);
+            }
+        }, 80);
+    });
+
+    // ── BLE Monitor globals ──────────────────────────────────────────────────
+    var blePacketCount = 0;
+    var _bleRateTick = 0;
+    setInterval(function() {
+        var rateEl = document.getElementById('ble-pkt-rate');
+        if (rateEl) rateEl.textContent = _bleRateTick + ' pkts/s';
+        _bleRateTick = 0;
+    }, 1000);
+
+    function bleMonitorAddPacket(bytes, sampleCount) {
+        _bleRateTick++;
+        blePacketCount++;
+        var cntEl = document.getElementById('ble-pkt-count');
+        if (cntEl) cntEl.textContent = blePacketCount;
+        var logDiv = document.getElementById('ble-raw-log');
+        if (!logDiv) return;
+        var hex = Array.from(bytes).map(function(b) { return b.toString(16).padStart(2,'0').toUpperCase(); }).join(' ');
+        var ts = new Date().toLocaleTimeString('en-GB', {hour12:false});
+        var entry = document.createElement('div');
+        entry.className = 'ble-log-entry';
+        entry.innerHTML = '<span class="ble-log-ts">' + ts + '</span>' +
+            '<span class="ble-log-smp">[' + sampleCount + 'smp/' + bytes.length + 'B]</span>' +
+            '<span class="ble-log-hex">' + hex + '</span>';
+        logDiv.insertBefore(entry, logDiv.firstChild);
+        while (logDiv.children.length > 50) { logDiv.removeChild(logDiv.lastChild); }
+    }
+
+    function updateBleStatus(status, deviceName) {
+        var dot = document.getElementById('ble-status-dot');
+        var sEl = document.getElementById('ble-conn-status');
+        var nEl = document.getElementById('ble-device-name-val');
+        if (dot) {
+            dot.className = 'ble-status-dot ' +
+                (status === 'connected' ? 'ble-dot-green' :
+                 status === 'connecting' ? 'ble-dot-yellow' : 'ble-dot-red');
+        }
+        if (sEl) sEl.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+        if (nEl && deviceName) nEl.textContent = deviceName;
+    }
+
+    function updateBleMonitorInfo(device) {
+        var el = document.getElementById('ble-device-info');
+        if (!el) return;
+        el.innerHTML =
+            '<tr><td>Device name</td><td id="ble-device-name-val">' + (device.name || '?') + '</td></tr>' +
+            '<tr><td>Service UUID</td><td><code>' + services.controlService.uuid + '</code></td></tr>' +
+            '<tr><td>cmdRead UUID</td><td><code>' + characteristics.commandReadCharacteristic.uuid + '</code></td></tr>' +
+            '<tr><td>cmdWrite UUID</td><td><code>' + characteristics.commandWriteCharacteristic.uuid + '</code></td></tr>' +
+            '<tr><td>eegData UUID</td><td><code>' + characteristics.deviceDataCharacteristic.uuid + '</code></td></tr>';
+    }
 
     //numerical data display
     function displayData() {
