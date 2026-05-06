@@ -144,6 +144,13 @@ void sampleTimerCB(TimerHandle_t xTimer) {
 }
 
 // =============================================================================
+//  TX diagnostics counters (file-scope so connectCB and loop() can both access)
+// =============================================================================
+static uint32_t _lastDiag = 0;
+static uint32_t _txCount  = 0;
+static uint32_t _txFail   = 0;
+
+// =============================================================================
 //  BLE connect / disconnect callbacks
 // =============================================================================
 void connectCB(uint16_t conn_handle) {
@@ -252,10 +259,6 @@ void setup() {
 // =============================================================================
 //  loop
 // =============================================================================
-static uint32_t _lastDiag = 0;
-static uint32_t _txCount  = 0;
-static uint32_t _txFail   = 0;
-
 void loop() {
     // Nothing to do until a central is connected
     if (activeConnHandle == BLE_CONN_HANDLE_INVALID) {
