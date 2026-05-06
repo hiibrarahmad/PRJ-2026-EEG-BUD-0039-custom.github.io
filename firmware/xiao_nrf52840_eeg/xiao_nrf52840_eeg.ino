@@ -60,8 +60,7 @@ BLECharacteristic eegDataChar (CHAR_DATA_UUID);
 static uint8_t  txBuf[TX_BUF_SIZE];
 static uint8_t  sampleSeq        = 0;
 static int      samplesInBuf     = 0;
-static uint16_t activeConnHandle = BLE_CONN_HANDLE_INVALID;
-
+static uint16_t activeConnHandle = BLE_CONN_HANDLE_INVALID;static bool     streamingStarted = false;   // true once MTU is large enough
 SoftwareTimer sampleTimer;
 volatile bool sampleReady = false;
 
@@ -149,6 +148,9 @@ void sampleTimerCB(TimerHandle_t xTimer) {
 // =============================================================================
 void connectCB(uint16_t conn_handle) {
     activeConnHandle = conn_handle;
+    streamingStarted = false;
+    samplesInBuf     = 0;
+    _txCount = 0;  _txFail = 0;
 
     BLEConnection *conn = Bluefruit.Connection(conn_handle);
     conn->requestMtuExchange(247);          // ask for max payload
@@ -159,14 +161,14 @@ void connectCB(uint16_t conn_handle) {
     Serial.print("[BLE] Connected to: ");
     Serial.println(name[0] ? name : "(unnamed)");
     Serial.print("[BLE] Initial MTU: "); Serial.println(conn->getMtu());
-    Serial.println("[BLE] Waiting for MTU exchange to complete...");
-
-    sampleTimer.start();    // begin generating samples
+    Serial.println("[BLE] Waiting for MTU exchange (need MTU > 29 for 27B frames)...");
+    // ⚠ Do NOT start sampleTimer here – stream only starts once MTU is big enough
 }
 
 void disconnectCB(uint16_t conn_handle, uint8_t reason) {
     (void)conn_handle;
     activeConnHandle = BLE_CONN_HANDLE_INVALID;
+    streamingStarted = false;
     sampleTimer.stop();
     samplesInBuf = 0;
     Serial.print("[BLE] Disconnected – reason 0x");
@@ -261,22 +263,48 @@ void loop() {
         return;
     }
 
-    // Wait for the 250 Hz timer tick
-    if (!sampleReady) return;
-    sampleReady = false;
-
     BLEConnection *conn = Bluefruit.Connection(activeConnHandle);
     if (!conn || !conn->connected()) {
-        samplesInBuf = 0;
+        samplesInBuf     = 0;
+        streamingStarted = false;
         return;
     }
+
+    uint16_t mtu = conn->getMtu();
+
+    // ── MTU negotiation phase: wait until payload can hold at least one 27-byte frame
+    if (!streamingStarted) {
+        static uint32_t lastMtuReq = 0;
+        if (mtu >= (BYTES_PER_SAMPLE + 3)) {          // MTU ≥ 30
+            streamingStarted = true;
+            sampleTimer.start();
+            Serial.print("[BLE] MTU OK = "); Serial.print(mtu);
+            Serial.print(" → payload="); Serial.print(mtu - 3);
+            Serial.print("B, "); Serial.print((mtu - 3) / BYTES_PER_SAMPLE);
+            Serial.println(" smp/pkt – streaming started!");
+        } else {
+            // Re-request MTU every 300 ms until it upgrades
+            uint32_t now = millis();
+            if (now - lastMtuReq >= 300) {
+                lastMtuReq = now;
+                conn->requestMtuExchange(247);
+                Serial.print("[MTU] Retrying exchange, current MTU=");
+                Serial.println(mtu);
+            }
+            delay(5);
+        }
+        return;
+    }
+
+    // ── Streaming phase: wait for 250 Hz timer tick ────────────────────────
+    if (!sampleReady) return;
+    sampleReady = false;
 
     // Generate and buffer one sample
     float t = (float)micros() * 1e-6f;
     appendSample(t);
 
     // How many samples fit in one notification given current MTU?
-    uint16_t mtu     = conn->getMtu();
     uint16_t payload = (mtu > 3) ? (uint16_t)(mtu - 3) : 20;
     int spPkt        = payload / BYTES_PER_SAMPLE;
     if (spPkt < 1) spPkt = 1;
