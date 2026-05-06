@@ -180,63 +180,64 @@ class ControllerWebBluetooth {
 
 
     handleDeviceDataChanged(event) {
-        //byteLength of deviceData DataView object is 20.
-        // deviceData return {{orientation: {w: *, x: *, y: *, z: *}, accelerometer: Array, gyroscope: Array}}
+        // ── New packet format (firmware xiao_nrf52840_eeg) ──────────────────
+        // Each sample = 27 bytes:
+        //   [0xA0][seq][ch1_b2][ch1_b1][ch1_b0] … [ch8_b2][ch8_b1][ch8_b0][0xC0]
+        // Multiple samples may be batched in one BLE notification (MTU-sized).
+        // 24-bit values are two's complement, MSB first, from ADS1299 at Gain=24.
+        // ────────────────────────────────────────────────────────────────────
 
-        let deviceData = event.target.value;
+        const SAMPLE_SIZE  = 27;
+        const START_BYTE   = 0xA0;
+        const END_BYTE     = 0xC0;
+        const NORM_SCALE   = 16777215; // 2^24 - 1
 
-  /*      if(dataType == "FFT"){
-        //log base 10 values of eeg frequency bands are recieved so we have to take the inverse log to get our signal --> 10^x is inverse of log(x) base 10
-	    	let deltaWave = Math.pow(10, (event.target.value.getUint8(0) / 10) + (event.target.value.getUint8(1) / 1000) + (event.target.value.getUint8(2) / 100000) );
-	    	let thetaWave = Math.pow(10, (event.target.value.getUint8(3) / 10) + (event.target.value.getUint8(4) / 1000) + (event.target.value.getUint8(5) / 100000) );
-	    	let alphaWave = Math.pow(10, (event.target.value.getUint8(6) / 10) + (event.target.value.getUint8(7) / 1000) + (event.target.value.getUint8(8) / 100000) );
-	    	let betaWave = Math.pow(10, (event.target.value.getUint8(9) / 10) + (event.target.value.getUint8(10) / 1000) + (event.target.value.getUint8(11) / 100000) );
-	        let EMGWave = Math.pow(10, (event.target.value.getUint8(12) / 10) + (event.target.value.getUint8(13) / 1000) + (event.target.value.getUint8(14) / 100000) );
-	    } else if(dataType == "FIR"){ */
-	    	let deltaWave = (event.target.value.getUint8(0) / 100) + (event.target.value.getUint8(1) / 10000) + (event.target.value.getUint8(2) / 1000000);
-	    	let thetaWave = (event.target.value.getUint8(3) / 100) + (event.target.value.getUint8(4) / 10000) + (event.target.value.getUint8(5) / 1000000);
-	    	let alphaWave = (event.target.value.getUint8(6) / 100) + (event.target.value.getUint8(7) / 10000) + (event.target.value.getUint8(8) / 1000000);
-	    	let betaWave = (event.target.value.getUint8(9) / 100) + (event.target.value.getUint8(10) / 10000) + (event.target.value.getUint8(11) / 1000000);
-	        let EMGWave = (event.target.value.getUint8(12) / 100) + (event.target.value.getUint8(13) / 10000) + (event.target.value.getUint8(14) / 1000000);
+        const bytes = new Uint8Array(event.target.value.buffer);
+        const samples = [];
 
-	        let deltaWave1 = (event.target.value.getUint8(0) / 100) + (event.target.value.getUint8(1) / 10000);
-	    	let thetaWave1 = (event.target.value.getUint8(2) / 100) + (event.target.value.getUint8(3) / 10000);
-	    	let alphaWave1 = (event.target.value.getUint8(4) / 100) + (event.target.value.getUint8(5) / 10000);
-	    	let betaWave1 = (event.target.value.getUint8(6) / 100) + (event.target.value.getUint8(7) / 10000);
-	        let EMGWave1 = (event.target.value.getUint8(8) / 100) + (event.target.value.getUint8(9) / 10000);
+        // Parse every complete sample frame in the notification
+        for (let i = 0; i <= bytes.length - SAMPLE_SIZE; i++) {
+            if (bytes[i] === START_BYTE && bytes[i + SAMPLE_SIZE - 1] === END_BYTE) {
+                const channels = [];
+                for (let ch = 0; ch < 8; ch++) {
+                    const off = i + 2 + ch * 3;
+                    // Reconstruct 24-bit two's-complement signed integer
+                    let raw = (bytes[off] << 16) | (bytes[off + 1] << 8) | bytes[off + 2];
+                    if (raw & 0x800000) raw = raw - 0x1000000; // sign-extend
+                    channels.push(raw);
+                }
+                samples.push(channels);
+                i += SAMPLE_SIZE - 1; // advance past this frame
+            }
+        }
 
-	        let deltaWave2 = (event.target.value.getUint8(10) / 100) + (event.target.value.getUint8(11) / 10000);
-	    	let thetaWave2 = (event.target.value.getUint8(12) / 100) + (event.target.value.getUint8(13) / 10000);
-	    	let alphaWave2 = (event.target.value.getUint8(14) / 100) + (event.target.value.getUint8(15) / 10000);
-	    	let betaWave2 = (event.target.value.getUint8(16) / 100) + (event.target.value.getUint8(17) / 10000);
-	        let EMGWave2 = (event.target.value.getUint8(18) / 100) + (event.target.value.getUint8(19) / 10000);
-	//    }
+        if (samples.length === 0) return; // guard: no valid frames found
 
-   // 	console.log("first BLE packet vals: " + event.target.value.getUint8(0) + " " + event.target.value.getUint8(1) + " " + event.target.value.getUint8(2));
-   // 	console.log("Combined delta BLE vals: " + ((event.target.value.getUint8(0) / 10) + (event.target.value.getUint8(1) / 1000) ) );
-    //	console.log("raw eeg (d1,t1,a1,b1,emg1,d2,t2,a2,b2,emg2): " + deltaWave1 + " " + thetaWave1 + " " + alphaWave1 + " " + betaWave1 + " " + EMGWave1 +  " " + deltaWave2 + " " + thetaWave2 + " " + alphaWave2 + " " + betaWave2 + " " + EMGWave2);
+        // Use the most recent complete sample for display
+        const ch = samples[samples.length - 1];
 
-        //for recording
-        console.log("[" + deltaWave1 + ", " + thetaWave1 + ", " + alphaWave1 + ", " + betaWave1 + ", " + EMGWave1 +  "],[" + deltaWave2 + ", " + thetaWave2 + ", " + alphaWave2 + ", " + betaWave2 + ", " + EMGWave2 + "],");
+        // Normalise each 24-bit signed value to 0..1  (0.5 = zero ADC)
+        // This keeps the existing NN and chart scaling code working unchanged.
+        const norm = raw => (raw + 8388608) / NORM_SCALE;
+
+        const n = ch.map(norm); // n[0]..n[7] = ch1..ch8 normalised
+
+        // Build µV values for logging (ADS1299: Vref=4.5V, Gain=24)
+        const LSB_UV = (4.5 / 24.0 / 8388608.0) * 1e6; // ≈ 0.02235 µV/LSB
+        const uv = ch.map(raw => (raw * LSB_UV).toFixed(3));
+        console.log("[EEG µV] ch1-8: " + uv.join(", ") + "  samples/pkt: " + samples.length);
 
         state = {
-            delta: deltaWave,
-            theta: thetaWave,
-            alpha: alphaWave,
-            beta: betaWave,
-            emg: EMGWave,
+            // Raw channel access (normalised 0-1)
+            ch1: n[0], ch2: n[1], ch3: n[2], ch4: n[3],
+            ch5: n[4], ch6: n[5], ch7: n[6], ch8: n[7],
 
-            delta1: deltaWave1,
-            theta1: thetaWave1,
-            alpha1: alphaWave1,
-            beta1: betaWave1,
-            emg1: EMGWave1,
+            // Legacy names – set 1 maps ch1..ch5 (shown on first display pass)
+            delta:  n[0], theta:  n[1], alpha:  n[2], beta:  n[3], emg:  n[4],
+            delta1: n[0], theta1: n[1], alpha1: n[2], beta1: n[3], emg1: n[4],
 
-            delta2: deltaWave2,
-            theta2: thetaWave2,
-            alpha2: alphaWave2,
-            beta2: betaWave2,
-            emg2: EMGWave2,
+            // Legacy names – set 2 maps ch4..ch8 (shown on second display pass)
+            delta2: n[3], theta2: n[4], alpha2: n[5], beta2: n[6], emg2: n[7],
         }
 
         //send data to device if device asks for it - we send it a couple times to be sure
