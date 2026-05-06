@@ -169,8 +169,7 @@ void disconnectCB(uint16_t conn_handle, uint8_t reason) {
     samplesInBuf = 0;
     Serial.print("[BLE] Disconnected – reason 0x");
     Serial.println(reason, HEX);
-    Bluefruit.Advertising.start(0);
-    Serial.println("[BLE] Re-advertising...");
+    // Advertising restarts automatically (restartOnDisconnect = true)
 }
 
 // =============================================================================
@@ -229,10 +228,10 @@ void setup() {
     Bluefruit.Advertising.addTxPower();
     Bluefruit.Advertising.addService(eegService);
     Bluefruit.Advertising.addName();
-    Bluefruit.Advertising.restartOnDisconnect(false); // handled in disconnectCB
-    Bluefruit.Advertising.setInterval(32, 244);       // fast 20 ms, slow 152.5 ms
-    Bluefruit.Advertising.setFastTimeout(30);
-    Bluefruit.Advertising.start(0);
+    Bluefruit.Advertising.restartOnDisconnect(true);  // auto-restart after disconnect
+    Bluefruit.Advertising.setInterval(32, 32);        // 20 ms constant – fast discovery
+    Bluefruit.Advertising.setFastTimeout(0);          // stay in fast mode indefinitely
+    Bluefruit.Advertising.start(0);                   // advertise until connected
 
     // ── 250 Hz software timer – started only when a central connects ─────────
     // SoftwareTimer::begin(period_ms, callback, oneshot)

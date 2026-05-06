@@ -62,6 +62,14 @@ function updateBleStatus(status, deviceName) {
     if (nEl && deviceName) nEl.textContent = deviceName;
 }
 
+function bleStatusMsg(msg, isError) {
+    var el = document.getElementById('ble-status-msg');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = isError ? '#f44336' : '#aaa';
+    el.style.display = msg ? 'inline-block' : 'none';
+}
+
 function updateBleMonitorInfo(device) {
     var el = document.getElementById('ble-device-info');
     if (!el) return;
@@ -114,31 +122,50 @@ class ControllerWebBluetooth {
     }
 
     connect() {
+        var self = this;
+        var btn = document.getElementById('connect');
+
         return navigator.bluetooth.requestDevice({
             filters: [{ name: this.name }],
             optionalServices: [services.controlService.uuid]
             })
-            .then(device => {
-                console.log('Device discovered', device.name);
-                _this.bleDevice = device;
-                device.addEventListener('gattserverdisconnected', function() { _this.onBleDisconnected(); });
-                updateBleStatus('connecting', device.name);
-                return device.gatt.connect();
-            })
-            .then(server => {
-                console.log('server device: ' + Object.keys(server.device));
-                _this.connected = true;
-                updateBleStatus('connected', server.device.name);
-                updateBleMonitorInfo(server.device);
-                var btn = document.getElementById('connect');
-                btn.innerHTML = '<i class="material-icons">bluetooth_connected</i> CONNECTED';
-                btn.style.background = '#2e7d32';
-                this.getServices([services.controlService, ], [characteristics.commandReadCharacteristic, characteristics.commandWriteCharacteristic, characteristics.deviceDataCharacteristic], server);
-            })
-            .catch(error => {
-                console.log('error', error);
-                updateBleStatus('error', '');
-            })
+        .then(function(device) {
+            bleStatusMsg('Connecting…');
+            updateBleStatus('connecting', device.name);
+            _this = self;
+            self.bleDevice = device;
+            device.addEventListener('gattserverdisconnected', function() { self.onBleDisconnected(); });
+            return device.gatt.connect();
+        })
+        .then(function(server) {
+            bleStatusMsg('Discovering service…');
+            self.standardServer = server;
+            return server.getPrimaryService(services.controlService.uuid);
+        })
+        .then(function(service) {
+            bleStatusMsg('Getting EEG characteristic…');
+            return service.getCharacteristic(characteristics.deviceDataCharacteristic.uuid);
+        })
+        .then(function(char) {
+            bleStatusMsg('Starting notifications…');
+            return char.startNotifications();
+        })
+        .then(function(char) {
+            char.addEventListener('characteristicvaluechanged', function(evt) { self.handleDeviceDataChanged(evt); });
+            self.connected = true;
+            updateBleStatus('connected', self.bleDevice.name);
+            updateBleMonitorInfo(self.bleDevice);
+            bleStatusMsg('');
+            btn.innerHTML = '<i class="material-icons">bluetooth_connected</i> CONNECTED';
+            btn.style.background = '#2e7d32';
+        })
+        .catch(function(error) {
+            console.error('[BLE] Connection failed:', error);
+            updateBleStatus('error', '');
+            bleStatusMsg(error.message || String(error), true);
+            btn.innerHTML = '<i class="material-icons">bluetooth</i> CONNECT';
+            btn.style.background = '';
+        });
     }
 
     getServices(requestedServices, requestedCharacteristics, server) {
@@ -341,24 +368,30 @@ class ControllerWebBluetooth {
     reconnect() {
         if (!_this.bleDevice) return;
         console.log('Attempting BLE reconnect...');
+        var btn = document.getElementById('connect');
         _this.bleDevice.gatt.connect()
-            .then(function(server) {
-                _this.connected = true;
-                updateBleStatus('connected', _this.bleDevice.name);
-                updateBleMonitorInfo(_this.bleDevice);
-                var btn = document.getElementById('connect');
-                btn.innerHTML = '<i class="material-icons">bluetooth_connected</i> CONNECTED';
-                btn.style.background = '#2e7d32';
-                _this.getServices(
-                    [services.controlService],
-                    [characteristics.commandReadCharacteristic, characteristics.commandWriteCharacteristic, characteristics.deviceDataCharacteristic],
-                    server
-                );
-            })
-            .catch(function(err) {
-                console.log('Reconnect failed:', err);
-                setTimeout(function() { _this.reconnect(); }, 3000);
-            });
+        .then(function(server) {
+            return server.getPrimaryService(services.controlService.uuid);
+        })
+        .then(function(service) {
+            return service.getCharacteristic(characteristics.deviceDataCharacteristic.uuid);
+        })
+        .then(function(char) {
+            return char.startNotifications();
+        })
+        .then(function(char) {
+            char.addEventListener('characteristicvaluechanged', function(evt) { _this.handleDeviceDataChanged(evt); });
+            _this.connected = true;
+            updateBleStatus('connected', _this.bleDevice.name);
+            bleStatusMsg('');
+            btn.innerHTML = '<i class="material-icons">bluetooth_connected</i> CONNECTED';
+            btn.style.background = '#2e7d32';
+        })
+        .catch(function(err) {
+            console.log('Reconnect failed:', err);
+            bleStatusMsg('Reconnecting...');
+            setTimeout(function() { _this.reconnect(); }, 3000);
+        });
     }
 }
 
