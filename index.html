@@ -757,23 +757,49 @@ The export data will provide an array or neural network weight values and an act
                                             <tr><td>eegData UUID</td><td><code>0000a003-0000-1000-8000-00805f9b34fb</code></td></tr>
                                         </tbody>
                                     </table>
-                                    <!-- Packet stats -->
+                                    <!-- Stats row 1 -->
                                     <div class="ble-stats-row">
                                         <div class="ble-stat-box">
                                             <div class="ble-stat-val" id="ble-pkt-count">0</div>
-                                            <div class="ble-stat-lbl">Total Packets</div>
+                                            <div class="ble-stat-lbl">Packets RX</div>
                                         </div>
                                         <div class="ble-stat-box">
                                             <div class="ble-stat-val" id="ble-pkt-rate">0 pkts/s</div>
                                             <div class="ble-stat-lbl">Packet Rate</div>
                                         </div>
                                         <div class="ble-stat-box">
-                                            <div class="ble-stat-val" style="font-size:14px;">27B&times;N</div>
-                                            <div class="ble-stat-lbl">Frame Format</div>
+                                            <div class="ble-stat-val" id="ble-samples-val">0</div>
+                                            <div class="ble-stat-lbl">Samples Decoded</div>
+                                        </div>
+                                        <div class="ble-stat-box">
+                                            <div class="ble-stat-val" id="ble-bytes-val">0 B</div>
+                                            <div class="ble-stat-lbl">Bytes Received</div>
+                                        </div>
+                                    </div>
+                                    <!-- Stats row 2 -->
+                                    <div class="ble-stats-row">
+                                        <div class="ble-stat-box">
+                                            <div class="ble-stat-val" id="ble-byte-rate">0 B/s</div>
+                                            <div class="ble-stat-lbl">Throughput</div>
+                                        </div>
+                                        <div class="ble-stat-box">
+                                            <div class="ble-stat-val" id="ble-last-pkt">&#8212;</div>
+                                            <div class="ble-stat-lbl">Last Packet</div>
+                                        </div>
+                                        <div class="ble-stat-box">
+                                            <div class="ble-stat-val" id="ble-conn-dur">&#8212;</div>
+                                            <div class="ble-stat-lbl">Connected For</div>
+                                        </div>
+                                        <div class="ble-stat-box">
+                                            <div class="ble-stat-val" id="ble-mtu-val" style="font-size:13px;">&#8212;</div>
+                                            <div class="ble-stat-lbl">MTU (inferred)</div>
                                         </div>
                                     </div>
                                     <!-- Raw hex log -->
-                                    <h6 style="margin:8px 0 4px;color:#aaa;">RAW BLE PACKETS (latest first)</h6>
+                                    <div style="display:flex;align-items:center;margin:10px 0 4px;">
+                                        <h6 style="margin:0;color:#aaa;flex:1;">RAW BLE PACKETS (latest first)</h6>
+                                        <button onclick="document.getElementById('ble-raw-log').innerHTML=''" style="background:#2a2a2a;color:#aaa;border:1px solid #555;padding:3px 12px;border-radius:3px;cursor:pointer;font-size:11px;">Clear</button>
+                                    </div>
                                     <div id="ble-raw-log">
                                         <div class="ble-log-entry" style="color:#555;">Waiting for BLE connection&hellip;</div>
                                     </div>

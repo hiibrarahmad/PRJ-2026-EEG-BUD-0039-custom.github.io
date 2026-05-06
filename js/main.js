@@ -22,31 +22,74 @@ let commandValue = new Uint8Array([0x99]); //command to send back to device
 //connection flag
 var bluetoothDataFlag = false;
 
-// ── BLE Monitor globals (module-level so class methods can access) ─────────
-var blePacketCount = 0;
-var _bleRateTick = 0;
+// ── BLE Monitor state (module-level) ────────────────────────────────────────────
+var blePacketCount    = 0;
+var bleBytesReceived  = 0;
+var bleSamplesDecoded = 0;
+var bleParseErrors    = 0;
+var bleConnStartTime  = null;
+var bleInferredMtu    = '?';
+var _bleRateTick      = 0;
+var _bleByteTick      = 0;
+
 setInterval(function() {
-    var rateEl = document.getElementById('ble-pkt-rate');
-    if (rateEl) rateEl.textContent = _bleRateTick + ' pkts/s';
+    var el;
+    el = document.getElementById('ble-pkt-rate');  if (el) el.textContent = _bleRateTick + ' pkts/s';
+    el = document.getElementById('ble-byte-rate'); if (el) el.textContent = (_bleByteTick >= 1024 ? (_bleByteTick/1024).toFixed(1)+' KB/s' : _bleByteTick+' B/s');
     _bleRateTick = 0;
+    _bleByteTick = 0;
+    if (bleConnStartTime) {
+        var secs = Math.floor((Date.now() - bleConnStartTime) / 1000);
+        var m = Math.floor(secs / 60), s = secs % 60;
+        el = document.getElementById('ble-conn-dur');
+        if (el) el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+    }
 }, 1000);
 
 function bleMonitorAddPacket(bytes, sampleCount) {
     _bleRateTick++;
+    _bleByteTick += bytes.length;
     blePacketCount++;
-    var cntEl = document.getElementById('ble-pkt-count');
-    if (cntEl) cntEl.textContent = blePacketCount;
+    bleBytesReceived += bytes.length;
+    if (sampleCount > 0) bleSamplesDecoded += sampleCount;
+    else bleParseErrors++;
+
+    // Infer MTU from first packet (payload + 3 ATT bytes)
+    if (bleInferredMtu === '?' && bytes.length >= 3) {
+        bleInferredMtu = bytes.length + 3;
+        var mtuEl = document.getElementById('ble-mtu-val');
+        if (mtuEl) mtuEl.textContent = bleInferredMtu + ' (inferred)';
+    }
+
+    var el;
+    el = document.getElementById('ble-pkt-count');    if (el) el.textContent = blePacketCount;
+    el = document.getElementById('ble-bytes-val');    if (el) el.textContent = bleBytesReceived >= 1048576 ? (bleBytesReceived/1048576).toFixed(2)+' MB' : bleBytesReceived >= 1024 ? (bleBytesReceived/1024).toFixed(1)+' KB' : bleBytesReceived+' B';
+    el = document.getElementById('ble-samples-val'); if (el) el.textContent = bleSamplesDecoded;
+    el = document.getElementById('ble-parse-err');   if (el) el.textContent = bleParseErrors;
+    el = document.getElementById('ble-last-pkt');    if (el) el.textContent = bytes.length + ' B / ' + sampleCount + ' smp';
+
     var logDiv = document.getElementById('ble-raw-log');
     if (!logDiv) return;
-    var hex = Array.from(bytes).map(function(b) { return b.toString(16).padStart(2,'0').toUpperCase(); }).join(' ');
-    var ts = new Date().toLocaleTimeString('en-GB', {hour12:false});
+
+    // Show first 27 bytes hex + abbreviated rest
+    var hexArr = Array.from(bytes).map(function(b){return b.toString(16).padStart(2,'0').toUpperCase();});
+    var hex = hexArr.slice(0, 27).join(' ');
+    if (bytes.length > 27) hex += ' <span style="color:#555">…(+' + (bytes.length-27) + 'B)</span>';
+
+    var ts = new Date().toLocaleTimeString('en-GB',{hour12:false});
+    var parseLabel = sampleCount > 0
+        ? '<span style="color:#4CAF50;font-weight:700">✓ ' + sampleCount + 'smp</span>'
+        : '<span style="color:#f44336;font-weight:700">✗ PARSE FAIL</span>';
+
     var entry = document.createElement('div');
     entry.className = 'ble-log-entry';
-    entry.innerHTML = '<span class="ble-log-ts">' + ts + '</span>' +
-        '<span class="ble-log-smp">[' + sampleCount + 'smp/' + bytes.length + 'B]</span>' +
+    entry.innerHTML =
+        '<span class="ble-log-ts">' + ts + '</span> ' +
+        parseLabel + ' ' +
+        '<span class="ble-log-smp">[' + bytes.length + 'B]</span> ' +
         '<span class="ble-log-hex">' + hex + '</span>';
     logDiv.insertBefore(entry, logDiv.firstChild);
-    while (logDiv.children.length > 50) { logDiv.removeChild(logDiv.lastChild); }
+    while (logDiv.children.length > 100) { logDiv.removeChild(logDiv.lastChild); }
 }
 
 function updateBleStatus(status, deviceName) {
@@ -71,14 +114,28 @@ function bleStatusMsg(msg, isError) {
 }
 
 function updateBleMonitorInfo(device) {
+    bleConnStartTime = Date.now();
+    bleInferredMtu   = '?';
+    blePacketCount   = 0;
+    bleBytesReceived = 0;
+    bleSamplesDecoded = 0;
+    bleParseErrors   = 0;
     var el = document.getElementById('ble-device-info');
     if (!el) return;
+    var ts = new Date().toLocaleString();
+    var devId = (device.id && device.id.length > 0) ? device.id : 'n/a';
     el.innerHTML =
-        '<tr><td>Device name</td><td id="ble-device-name-val">' + (device.name || '?') + '</td></tr>' +
+        '<tr><td>Device name</td><td style="color:#FFD700;font-weight:700">' + (device.name || '?') + '</td></tr>' +
+        '<tr><td>Device ID</td><td><code style="font-size:10px">' + devId + '</code></td></tr>' +
+        '<tr><td>Connected at</td><td>' + ts + '</td></tr>' +
+        '<tr><td>Packet format</td><td>27 B/sample: [0xA0][seq][CH1-8 ×3B MSB][0xC0]</td></tr>' +
+        '<tr><td>Sample rate</td><td>250 SPS → batched per MTU (~9 smp/pkt at MTU 247)</td></tr>' +
         '<tr><td>Service UUID</td><td><code>' + services.controlService.uuid + '</code></td></tr>' +
         '<tr><td>cmdRead UUID</td><td><code>' + characteristics.commandReadCharacteristic.uuid + '</code></td></tr>' +
         '<tr><td>cmdWrite UUID</td><td><code>' + characteristics.commandWriteCharacteristic.uuid + '</code></td></tr>' +
-        '<tr><td>eegData UUID</td><td><code>' + characteristics.deviceDataCharacteristic.uuid + '</code></td></tr>';
+        '<tr><td>eegData UUID</td><td><code>' + characteristics.deviceDataCharacteristic.uuid + '</code></td></tr>' +
+        '<tr><td>MTU (inferred)</td><td id="ble-mtu-val">detecting…</td></tr>' +
+        '<tr><td>Parse errors</td><td id="ble-parse-err">0</td></tr>';
 }
 
 if ( 'bluetooth' in navigator === false ) {
@@ -295,7 +352,14 @@ class ControllerWebBluetooth {
             }
         }
 
-        if (samples.length === 0) return; // guard: no valid frames found
+        // ── ALWAYS log raw packet FIRST (even if parsing fails) ──────────────────
+        bleMonitorAddPacket(bytes, samples.length);
+
+        if (samples.length === 0) {
+            console.warn('[EEG] Parse fail – ' + bytes.length + 'B rx, first bytes: ' +
+                Array.from(bytes.slice(0,6)).map(function(b){return '0x'+b.toString(16);}).join(' '));
+            return;
+        }
 
         // Use the most recent complete sample for display
         const ch = samples[samples.length - 1];
@@ -310,7 +374,6 @@ class ControllerWebBluetooth {
         const LSB_UV = (4.5 / 24.0 / 8388608.0) * 1e6; // ≈ 0.02235 µV/LSB
         const uv = ch.map(raw => (raw * LSB_UV).toFixed(3));
         console.log("[EEG µV] ch1-8: " + uv.join(", ") + "  samples/pkt: " + samples.length);
-        bleMonitorAddPacket(bytes, samples.length);
 
         state = {
             // Raw channel access (normalised 0-1)

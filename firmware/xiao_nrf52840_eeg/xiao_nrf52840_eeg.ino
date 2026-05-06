@@ -158,6 +158,8 @@ void connectCB(uint16_t conn_handle) {
     conn->getPeerName(name, sizeof(name));
     Serial.print("[BLE] Connected to: ");
     Serial.println(name[0] ? name : "(unnamed)");
+    Serial.print("[BLE] Initial MTU: "); Serial.println(conn->getMtu());
+    Serial.println("[BLE] Waiting for MTU exchange to complete...");
 
     sampleTimer.start();    // begin generating samples
 }
@@ -248,6 +250,10 @@ void setup() {
 // =============================================================================
 //  loop
 // =============================================================================
+static uint32_t _lastDiag = 0;
+static uint32_t _txCount  = 0;
+static uint32_t _txFail   = 0;
+
 void loop() {
     // Nothing to do until a central is connected
     if (activeConnHandle == BLE_CONN_HANDLE_INVALID) {
@@ -281,10 +287,26 @@ void loop() {
         uint16_t txLen = (uint16_t)(samplesInBuf * BYTES_PER_SAMPLE);
         bool ok = eegDataChar.notify(activeConnHandle, txBuf, txLen);
         if (!ok) {
+            _txFail++;
             // BLE congestion: drop oldest half to avoid accumulating lag
             samplesInBuf = samplesInBuf / 2;
         } else {
+            _txCount++;
             samplesInBuf = 0;
         }
+    }
+
+    // Print diagnostics every 5 seconds
+    uint32_t now = millis();
+    if (now - _lastDiag >= 5000) {
+        _lastDiag = now;
+        BLEConnection *c = Bluefruit.Connection(activeConnHandle);
+        uint16_t curMtu = c ? c->getMtu() : 0;
+        Serial.print("[DIAG] MTU="); Serial.print(curMtu);
+        Serial.print(" spPkt="); Serial.print(spPkt);
+        Serial.print(" TX="); Serial.print(_txCount);
+        Serial.print(" FAIL="); Serial.print(_txFail);
+        Serial.print(" payload="); Serial.print(curMtu > 3 ? curMtu - 3 : 0);
+        Serial.println("B");
     }
 }
