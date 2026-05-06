@@ -128,7 +128,7 @@ function updateBleMonitorInfo(device) {
         '<tr><td>Device name</td><td style="color:#FFD700;font-weight:700">' + (device.name || '?') + '</td></tr>' +
         '<tr><td>Device ID</td><td><code style="font-size:10px">' + devId + '</code></td></tr>' +
         '<tr><td>Connected at</td><td>' + ts + '</td></tr>' +
-        '<tr><td>Packet format</td><td>27 B/sample: [0xA0][seq][CH1-8 ×3B MSB][0xC0]</td></tr>' +
+        '<tr><td>Packet format</td><td>9 B/sample: [0xA0][seq][CH1-2 ×3B MSB][0xC0]</td></tr>' +
         '<tr><td>Sample rate</td><td>250 SPS → batched per MTU (~9 smp/pkt at MTU 247)</td></tr>' +
         '<tr><td>Service UUID</td><td><code>' + services.controlService.uuid + '</code></td></tr>' +
         '<tr><td>cmdRead UUID</td><td><code>' + characteristics.commandReadCharacteristic.uuid + '</code></td></tr>' +
@@ -321,14 +321,14 @@ class ControllerWebBluetooth {
 
 
     handleDeviceDataChanged(event) {
-        // ── New packet format (firmware xiao_nrf52840_eeg) ──────────────────
-        // Each sample = 27 bytes:
-        //   [0xA0][seq][ch1_b2][ch1_b1][ch1_b0] … [ch8_b2][ch8_b1][ch8_b0][0xC0]
-        // Multiple samples may be batched in one BLE notification (MTU-sized).
-        // 24-bit values are two's complement, MSB first, from ADS1299 at Gain=24.
+        // ── Packet format (2-channel, fits default MTU=23) ──────────────────
+        // Each sample = 9 bytes:
+        //   [0xA0][seq][ch1_b2][ch1_b1][ch1_b0][ch2_b2][ch2_b1][ch2_b0][0xC0]
+        // 2 samples batched per 20-byte payload at MTU=23.
         // ────────────────────────────────────────────────────────────────────
 
-        const SAMPLE_SIZE  = 27;
+        const SAMPLE_SIZE  = 9;
+        const NUM_CHANNELS = 2;
         const START_BYTE   = 0xA0;
         const END_BYTE     = 0xC0;
         const NORM_SCALE   = 16777215; // 2^24 - 1
@@ -340,7 +340,7 @@ class ControllerWebBluetooth {
         for (let i = 0; i <= bytes.length - SAMPLE_SIZE; i++) {
             if (bytes[i] === START_BYTE && bytes[i + SAMPLE_SIZE - 1] === END_BYTE) {
                 const channels = [];
-                for (let ch = 0; ch < 8; ch++) {
+                for (let ch = 0; ch < NUM_CHANNELS; ch++) {
                     const off = i + 2 + ch * 3;
                     // Reconstruct 24-bit two's-complement signed integer
                     let raw = (bytes[off] << 16) | (bytes[off + 1] << 8) | bytes[off + 2];
@@ -365,15 +365,16 @@ class ControllerWebBluetooth {
         const ch = samples[samples.length - 1];
 
         // Normalise each 24-bit signed value to 0..1  (0.5 = zero ADC)
-        // This keeps the existing NN and chart scaling code working unchanged.
         const norm = raw => (raw + 8388608) / NORM_SCALE;
 
-        const n = ch.map(norm); // n[0]..n[7] = ch1..ch8 normalised
+        const n0 = norm(ch[0]);  // CH1
+        const n1 = norm(ch[1]);  // CH2
+        const n  = [n0, n1, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]; // ch3-ch8 neutral
 
         // Build µV values for logging (ADS1299: Vref=4.5V, Gain=24)
         const LSB_UV = (4.5 / 24.0 / 8388608.0) * 1e6; // ≈ 0.02235 µV/LSB
         const uv = ch.map(raw => (raw * LSB_UV).toFixed(3));
-        console.log("[EEG µV] ch1-8: " + uv.join(", ") + "  samples/pkt: " + samples.length);
+        console.log("[EEG µV] ch1-2: " + uv.join(", ") + "  samples/pkt: " + samples.length);
 
         state = {
             // Raw channel access (normalised 0-1)

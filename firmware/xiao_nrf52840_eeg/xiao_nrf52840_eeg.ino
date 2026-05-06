@@ -7,15 +7,14 @@
 //  over BLE at 250 SPS, batching multiple samples per notification based on
 //  the negotiated ATT MTU.
 //
-//  PACKET FORMAT  (27 bytes per sample)
-//  ┌────────┬──────────┬───────────────────────────────────────┬────────┐
-//  │  0xA0  │ seq (1B) │ CH1-CH8, 3 bytes each MSB-first (24B)│  0xC0  │
-//  └────────┴──────────┴───────────────────────────────────────┴────────┘
+//  PACKET FORMAT  (9 bytes per sample – fits default BLE MTU=23 / payload=20)
+//  ┌────────┬──────────┬───────────────────────┬────────┐
+//  │  0xA0  │ seq (1B) │ CH1-CH2, 3B each MSB  │  0xC0  │
+//  └────────┴──────────┴───────────────────────┴────────┘
 //
 //  MTU BATCHING
-//  Bluefruit requests MTU 247 (244 bytes payload).
-//  244 / 27 = 9 samples per notification → ~27 notifications/s at 250 SPS.
-//  Falls back gracefully to fewer samples if MTU is smaller.
+//  20-byte payload / 9 bytes = 2 samples per notification → 125 notif/s @ 250 SPS.
+//  Works with Windows default MTU=23 – no MTU negotiation needed.
 //
 //  BLE UUIDs match the web app exactly – no web changes needed.
 //
@@ -41,10 +40,11 @@
 // ── Packet sizing ────────────────────────────────────────────────────────────
 #define START_BYTE        0xA0
 #define END_BYTE          0xC0
-#define BYTES_PER_SAMPLE  27
-#define MAX_PAYLOAD       244           // MTU 247 − 3 ATT overhead
-#define MAX_SAMPLES_PKT   (MAX_PAYLOAD / BYTES_PER_SAMPLE)   // = 9
-#define TX_BUF_SIZE       (MAX_SAMPLES_PKT * BYTES_PER_SAMPLE)  // = 243
+#define BYTES_PER_SAMPLE  9             // [0xA0][seq][CH1 3B][CH2 3B][0xC0]
+#define NUM_CHANNELS      2             // 2 channels sent per sample
+#define MAX_PAYLOAD       20            // worst-case: MTU=23 → 20B payload
+#define MAX_SAMPLES_PKT   (MAX_PAYLOAD / BYTES_PER_SAMPLE)   // = 2
+#define TX_BUF_SIZE       (MAX_SAMPLES_PKT * BYTES_PER_SAMPLE)  // = 18
 
 // ── Sample timing ────────────────────────────────────────────────────────────
 #define SAMPLE_RATE_HZ      250
@@ -123,7 +123,7 @@ static void appendSample(float t) {
     p[0] = START_BYTE;
     p[1] = sampleSeq++;
 
-    for (uint8_t ch = 0; ch < 8; ch++) {
+    for (uint8_t ch = 0; ch < NUM_CHANNELS; ch++) {
         int32_t  raw  = syntheticEEG(ch, t);
         uint32_t u24  = (uint32_t)(raw & 0xFFFFFF);
         p[2 + ch * 3]     = (u24 >> 16) & 0xFF;
@@ -131,7 +131,7 @@ static void appendSample(float t) {
         p[2 + ch * 3 + 2] =  u24        & 0xFF;
     }
 
-    p[26] = END_BYTE;
+    p[BYTES_PER_SAMPLE - 1] = END_BYTE;   // byte 8
     samplesInBuf++;
 }
 
@@ -160,16 +160,15 @@ void connectCB(uint16_t conn_handle) {
     _txCount = 0;  _txFail = 0;
 
     BLEConnection *conn = Bluefruit.Connection(conn_handle);
-    conn->requestMtuExchange(247);          // ask for max payload
     conn->requestConnectionParameter(6, 24); // 7.5 ms – 30 ms interval
 
     char name[64] = {};
     conn->getPeerName(name, sizeof(name));
     Serial.print("[BLE] Connected to: ");
     Serial.println(name[0] ? name : "(unnamed)");
-    Serial.print("[BLE] Initial MTU: "); Serial.println(conn->getMtu());
-    Serial.println("[BLE] Waiting for MTU exchange (need MTU > 29 for 27B frames)...");
-    // ⚠ Do NOT start sampleTimer here – stream only starts once MTU is big enough
+    Serial.print("[BLE] MTU: "); Serial.print(conn->getMtu());
+    Serial.println(" (need >= 12 for 9B frames)");
+    // ⚠ sampleTimer starts in loop() once MTU check passes (>= 12)
 }
 
 void disconnectCB(uint16_t conn_handle, uint8_t reason) {
@@ -251,9 +250,10 @@ void setup() {
     Serial.println("[BLE] Advertising as: " DEVICE_NAME);
     Serial.print("[BLE] Service: ");    Serial.println(SERVICE_UUID);
     Serial.print("[Packet] ");
-    Serial.print(BYTES_PER_SAMPLE);    Serial.print(" bytes/sample, ");
-    Serial.print(MAX_SAMPLES_PKT);     Serial.println(" samples/pkt max");
-    Serial.println("[EEG] 8ch synthetic: delta+theta+alpha+beta+noise @ 250 SPS");
+    Serial.print(BYTES_PER_SAMPLE);    Serial.print(" bytes/sample (");
+    Serial.print(NUM_CHANNELS);        Serial.print(" ch), ");
+    Serial.print(MAX_SAMPLES_PKT);     Serial.println(" samples/pkt max @ MTU=23");
+    Serial.println("[EEG] CH1+CH2 synthetic: delta+theta+alpha+beta+noise @ 250 SPS");
 }
 
 // =============================================================================
@@ -275,26 +275,16 @@ void loop() {
 
     uint16_t mtu = conn->getMtu();
 
-    // ── MTU negotiation phase: wait until payload can hold at least one 27-byte frame
+    // ── MTU check: 9B frame needs MTU >= 12; default MTU=23 always passes ───
     if (!streamingStarted) {
-        static uint32_t lastMtuReq = 0;
-        if (mtu >= (BYTES_PER_SAMPLE + 3)) {          // MTU ≥ 30
+        if (mtu >= (BYTES_PER_SAMPLE + 3)) {          // MTU ≥ 12 – always true at default
             streamingStarted = true;
             sampleTimer.start();
-            Serial.print("[BLE] MTU OK = "); Serial.print(mtu);
-            Serial.print(" → payload="); Serial.print(mtu - 3);
-            Serial.print("B, "); Serial.print((mtu - 3) / BYTES_PER_SAMPLE);
-            Serial.println(" smp/pkt – streaming started!");
-        } else {
-            // Re-request MTU every 300 ms until it upgrades
-            uint32_t now = millis();
-            if (now - lastMtuReq >= 300) {
-                lastMtuReq = now;
-                conn->requestMtuExchange(247);
-                Serial.print("[MTU] Retrying exchange, current MTU=");
-                Serial.println(mtu);
-            }
-            delay(5);
+            uint16_t payload = mtu - 3;
+            Serial.print("[BLE] Streaming started! MTU="); Serial.print(mtu);
+            Serial.print(" payload="); Serial.print(payload);
+            Serial.print("B → "); Serial.print(payload / BYTES_PER_SAMPLE);
+            Serial.println(" smp/pkt");
         }
         return;
     }
