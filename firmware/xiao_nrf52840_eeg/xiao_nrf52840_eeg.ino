@@ -1,301 +1,291 @@
 // =============================================================================
-//  XIAO nRF52840  –  8-Channel EEG via ADS1299  –  BLE 250 SPS
+//  XIAO nRF52840 – 8-Channel SIMULATED EEG – Bluefruit library – 250 SPS
 // =============================================================================
 //
-//  PACKET FORMAT (27 bytes per sample)
-//  ┌────────┬──────────┬────────────────────────────────────────────┬────────┐
-//  │ 0xA0   │ seq (1B) │ CH1-CH8 each 3 bytes MSB-first (24 bytes) │ 0xC0   │
-//  └────────┴──────────┴────────────────────────────────────────────┴────────┘
-//  Total  = 1 + 1 + 24 + 1 = 27 bytes
+//  No real hardware needed.  Generates realistic synthetic EEG waveforms
+//  (delta / theta / alpha / beta + noise) on all 8 channels and sends them
+//  over BLE at 250 SPS, batching multiple samples per notification based on
+//  the negotiated ATT MTU.
+//
+//  PACKET FORMAT  (27 bytes per sample)
+//  ┌────────┬──────────┬───────────────────────────────────────┬────────┐
+//  │  0xA0  │ seq (1B) │ CH1-CH8, 3 bytes each MSB-first (24B)│  0xC0  │
+//  └────────┴──────────┴───────────────────────────────────────┴────────┘
 //
 //  MTU BATCHING
-//  At connection the web browser (Chrome) requests a large ATT MTU (up to 512).
-//  The nRF52840 SoftDevice caps it at 247 → 244 bytes payload.
-//  244 / 27 = 9 complete samples per BLE notification.
-//  At 250 SPS this gives ~27 notifications/second (one every ~36 ms).
-//  If MTU is smaller the code falls back to fewer samples per packet.
+//  Bluefruit requests MTU 247 (244 bytes payload).
+//  244 / 27 = 9 samples per notification → ~27 notifications/s at 250 SPS.
+//  Falls back gracefully to fewer samples if MTU is smaller.
 //
-//  WIRING  (XIAO nRF52840 → ADS1299)
-//  ───────────────────────────────────
-//  D8  (SCK)   → SCLK
-//  D9  (MISO)  → DOUT
-//  D10 (MOSI)  → DIN
-//  D7          → CS   (chip-select, active LOW)
-//  D5          → START
-//  D4          → RESET (active LOW)
-//  D3          → DRDY  (active LOW, fires interrupt)
-//  3.3V        → AVDD, DVDD (use 3.3V NOT 5V)
-//  GND         → AGND, DGND
+//  BLE UUIDs match the web app exactly – no web changes needed.
 //
-//  REQUIRED LIBRARIES (install via Arduino Library Manager)
-//  ─────────────────────────────────────────────────────────
-//  - ArduinoBLE  (>= 1.3.0)
-//  Board package: "Seeed nRF52 mbed-enabled Boards"  OR
-//                 "Seeed XIAO nRF52840" from Seeed board manager URL
-//
-//  BLE UUIDs match the web app exactly so no web-side UUID changes needed.
+//  BOARD SETUP
+//  ──────────────────────────────────────────────────────────────────────
+//  Board manager URL (Seeed):
+//    https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json
+//  Select board: Seeed XIAO nRF52840
+//  The Bluefruit (Adafruit nRF52) library comes bundled with the Seeed nRF52
+//  board package, or install separately:
+//    Library Manager → "Adafruit Bluefruit nRF52"
 // =============================================================================
 
-#include <ArduinoBLE.h>
-#include <SPI.h>
+#include <bluefruit.h>
 
-// ── BLE UUIDs (must match web app) ──────────────────────────────────────────
-#define DEVICE_NAME      "EEGlasses"
-#define SERVICE_UUID     "0000a000-0000-1000-8000-00805f9b34fb"
-#define CHAR_READ_UUID   "0000a001-0000-1000-8000-00805f9b34fb"
-#define CHAR_WRITE_UUID  "0000a002-0000-1000-8000-00805f9b34fb"
-#define CHAR_DATA_UUID   "0000a003-0000-1000-8000-00805f9b34fb"
+// ── BLE identifiers ──────────────────────────────────────────────────────────
+#define DEVICE_NAME     "EEGlasses"
+#define SERVICE_UUID    "0000a000-0000-1000-8000-00805f9b34fb"
+#define CHAR_READ_UUID  "0000a001-0000-1000-8000-00805f9b34fb"
+#define CHAR_WRITE_UUID "0000a002-0000-1000-8000-00805f9b34fb"
+#define CHAR_DATA_UUID  "0000a003-0000-1000-8000-00805f9b34fb"
 
-// ── ADS1299 pin assignments ──────────────────────────────────────────────────
-#define PIN_ADS_CS     D7
-#define PIN_ADS_START  D5
-#define PIN_ADS_RESET  D4
-#define PIN_ADS_DRDY   D3
-
-// ── Packet / buffer constants ────────────────────────────────────────────────
+// ── Packet sizing ────────────────────────────────────────────────────────────
 #define START_BYTE        0xA0
 #define END_BYTE          0xC0
-#define BYTES_PER_SAMPLE  27          // 1+1+24+1
-#define MAX_PAYLOAD       244         // nRF52840 SoftDevice max (MTU 247 - 3)
-#define MAX_SAMPLES_PKT   (MAX_PAYLOAD / BYTES_PER_SAMPLE)   // 9
-#define TX_BUF_SIZE       (MAX_SAMPLES_PKT * BYTES_PER_SAMPLE)  // 243 bytes
+#define BYTES_PER_SAMPLE  27
+#define MAX_PAYLOAD       244           // MTU 247 − 3 ATT overhead
+#define MAX_SAMPLES_PKT   (MAX_PAYLOAD / BYTES_PER_SAMPLE)   // = 9
+#define TX_BUF_SIZE       (MAX_SAMPLES_PKT * BYTES_PER_SAMPLE)  // = 243
 
-// ── ADS1299 register addresses ───────────────────────────────────────────────
-#define REG_CONFIG1  0x01
-#define REG_CONFIG2  0x02
-#define REG_CONFIG3  0x03
-#define REG_CH1SET   0x05
-#define REG_CH8SET   0x0C
+// ── Sample timing ────────────────────────────────────────────────────────────
+#define SAMPLE_RATE_HZ      250
+#define SAMPLE_PERIOD_MS    (1000 / SAMPLE_RATE_HZ)   // = 4 ms
 
-// ── ADS1299 SPI commands ─────────────────────────────────────────────────────
-#define CMD_SDATAC   0x11   // stop continuous data read
-#define CMD_RDATAC   0x10   // start continuous data read
-#define CMD_START    0x08   // start/restart conversions
-#define CMD_RESET    0x06   // reset (software)
-#define CMD_RREG     0x20   // read register(s)
-#define CMD_WREG     0x40   // write register(s)
-
-// ── BLE objects ──────────────────────────────────────────────────────────────
+// ── BLE objects ───────────────────────────────────────────────────────────────
 BLEService        eegService  (SERVICE_UUID);
-BLECharacteristic cmdReadChar (CHAR_READ_UUID,  BLERead | BLENotify, 20);
-BLECharacteristic cmdWriteChar(CHAR_WRITE_UUID, BLEWrite, 20);
-BLECharacteristic eegDataChar (CHAR_DATA_UUID,  BLERead | BLENotify, TX_BUF_SIZE);
+BLECharacteristic cmdReadChar (CHAR_READ_UUID);
+BLECharacteristic cmdWriteChar(CHAR_WRITE_UUID);
+BLECharacteristic eegDataChar (CHAR_DATA_UUID);
 
-// ── Runtime state ─────────────────────────────────────────────────────────────
+// ── State ────────────────────────────────────────────────────────────────────
 static uint8_t  txBuf[TX_BUF_SIZE];
-static uint8_t  sampleSeq    = 0;
-static int      samplesInBuf = 0;
-static volatile bool drdyReady = false;
+static uint8_t  sampleSeq        = 0;
+static int      samplesInBuf     = 0;
+static uint16_t activeConnHandle = BLE_CONN_HANDLE_INVALID;
+
+SoftwareTimer sampleTimer;
+volatile bool sampleReady = false;
 
 // =============================================================================
-//  ADS1299 Low-level SPI helpers
+//  Lightweight LCG pseudo-random noise (no stdlib rand overhead)
 // =============================================================================
-
-static void adsSelect()   { digitalWrite(PIN_ADS_CS, LOW);  delayMicroseconds(1); }
-static void adsDeselect() { digitalWrite(PIN_ADS_CS, HIGH); delayMicroseconds(2); }
-
-static void adsCmd(uint8_t cmd) {
-    adsSelect();
-    SPI.transfer(cmd);
-    adsDeselect();
-}
-
-static void adsWriteReg(uint8_t reg, uint8_t val) {
-    adsSelect();
-    SPI.transfer(CMD_WREG | (reg & 0x1F)); // opcode 1: WREG | address
-    SPI.transfer(0x00);                    // opcode 2: write 1 register
-    SPI.transfer(val);
-    adsDeselect();
-}
-
-static uint8_t adsReadReg(uint8_t reg) {
-    adsSelect();
-    SPI.transfer(CMD_RREG | (reg & 0x1F));
-    SPI.transfer(0x00);
-    uint8_t val = SPI.transfer(0x00);
-    adsDeselect();
-    return val;
-}
-
-// Read one frame: 3 status bytes + 8 × 3 channel bytes = 27 bytes
-// Returns only the 24 channel bytes in chData[24]
-static void adsReadFrame(uint8_t chData[24]) {
-    uint8_t raw[27];
-    adsSelect();
-    for (int i = 0; i < 27; i++) {
-        raw[i] = SPI.transfer(0x00);
-    }
-    adsDeselect();
-    memcpy(chData, raw + 3, 24); // skip 3 status bytes
+static uint32_t lcgState = 0xDEADBEEFUL;
+static inline int32_t lcgNoise(int32_t amp) {
+    lcgState = lcgState * 1664525UL + 1013904223UL;
+    int32_t r = (int32_t)(lcgState >> 16) & 0xFFFF;
+    return (r - 32768) * amp / 32768;
 }
 
 // =============================================================================
-//  ADS1299 Initialisation
+//  Synthetic EEG – per-channel waveform generator
+//  Returns a 24-bit signed integer (clamped to ±8 388 607).
+//  Each channel has unique phase offsets and amplitude ratios so the 8
+//  channels look independent but all plausibly "brain-like".
 // =============================================================================
 
-static void adsInit() {
-    // Configure control pins
-    pinMode(PIN_ADS_CS,    OUTPUT); digitalWrite(PIN_ADS_CS,    HIGH);
-    pinMode(PIN_ADS_START, OUTPUT); digitalWrite(PIN_ADS_START, LOW);
-    pinMode(PIN_ADS_RESET, OUTPUT); digitalWrite(PIN_ADS_RESET, HIGH);
-    pinMode(PIN_ADS_DRDY,  INPUT);
+// Channel-specific phase offsets (radians)
+static const float CH_PHASE[8]        = { 0.00f, 0.52f, 1.05f, 1.57f,
+                                          2.09f, 2.62f, 3.14f, 3.67f };
+// Small alpha-frequency offset per channel (Hz)
+static const float CH_ALPHA_DELTA[8]  = { 0.0f,  0.3f, -0.3f,  0.6f,
+                                         -0.6f,  0.9f, -0.9f,  1.2f };
 
-    // SPI: ADS1299 uses Mode 1 (CPOL=0, CPHA=1), max 20 MHz but 4 MHz is safe
-    SPI.begin();
-    SPI.beginTransaction(SPISettings(4000000, MSBFIRST, SPI_MODE1));
+static int32_t syntheticEEG(uint8_t ch, float t) {
+    float phi = CH_PHASE[ch];
 
-    // Hardware reset
-    delay(100);
-    digitalWrite(PIN_ADS_RESET, LOW);
-    delayMicroseconds(10);
-    digitalWrite(PIN_ADS_RESET, HIGH);
-    delay(10);
+    // Delta  1-4 Hz  – large slow waves
+    float delta = 120000.f * sinf(TWO_PI * (1.8f + ch * 0.28f) * t + phi);
 
-    adsCmd(CMD_SDATAC);   // must stop continuous read before writing registers
-    delay(1);
+    // Theta  4-8 Hz  – drowsiness / creativity
+    float theta =  80000.f * sinf(TWO_PI * (5.5f + ch * 0.18f) * t + phi + 0.5f);
 
-    // CONFIG1: 250 SPS
-    //   Bit7=1 (DAISY_EN disabled=standalone), Bit6=0 (CLK out off)
-    //   Bit5..3=001 (reserved default), Bit2..0=110 (DR=250 SPS)
-    adsWriteReg(REG_CONFIG1, 0x96);
+    // Alpha  8-13 Hz – dominant "eyes closed" rhythm
+    float alpha = 220000.f * sinf(TWO_PI * (10.f + CH_ALPHA_DELTA[ch]) * t + phi + 1.1f);
 
-    // CONFIG2: test signal off, internal reference, default
-    adsWriteReg(REG_CONFIG2, 0xC0);
+    // Beta  13-30 Hz – active cognition, smaller amplitude
+    float beta  =  45000.f * sinf(TWO_PI * (20.f + ch * 0.9f)  * t + phi + 2.1f);
 
-    // CONFIG3: internal reference enabled (VREF=4.5V), bias buffer on
-    //   Bit7=1 (PD_REFBUF on), Bit6=1 (reserved), Bit5=1 (BIAS_MEAS off),
-    //   Bit4..3=10 (BIASREF int), Bit2=1 (PD_BIAS on), Bit1..0=00
-    adsWriteReg(REG_CONFIG3, 0xEC);
-    delay(10); // wait for internal reference to settle
+    // Gamma burst on ch1 only (40 Hz, tiny)
+    float gamma = (ch == 0) ? 12000.f * sinf(TWO_PI * 40.f * t) : 0.f;
 
-    // All 8 channel registers: Gain=24, normal electrode input
-    //   CHnSET: Bit6-4=110 (GAIN=24), Bit2-0=000 (normal input)
-    for (uint8_t reg = REG_CH1SET; reg <= REG_CH8SET; reg++) {
-        adsWriteReg(reg, 0x60);
-    }
+    // Noise (sum two LCG calls ≈ triangular distribution)
+    int32_t noise = lcgNoise(6000) + lcgNoise(6000);
 
-    // Attach DRDY interrupt – falling edge signals new data ready
-    attachInterrupt(digitalPinToInterrupt(PIN_ADS_DRDY), []{ drdyReady = true; }, FALLING);
-
-    // Start conversions and enter continuous-read mode
-    adsCmd(CMD_START);
-    delay(1);
-    adsCmd(CMD_RDATAC);
+    int32_t v = (int32_t)(delta + theta + alpha + beta + gamma) + noise;
+    if (v >  8388607)  v =  8388607;
+    if (v < -8388608)  v = -8388608;
+    return v;
 }
 
 // =============================================================================
-//  Packet builder – append one sample to txBuf
+//  Build one sample frame into txBuf at current write position
 // =============================================================================
-
-static void appendSample(const uint8_t chData[24]) {
+static void appendSample(float t) {
     uint8_t *p = txBuf + samplesInBuf * BYTES_PER_SAMPLE;
     p[0] = START_BYTE;
     p[1] = sampleSeq++;
-    memcpy(p + 2, chData, 24);
+
+    for (uint8_t ch = 0; ch < 8; ch++) {
+        int32_t  raw  = syntheticEEG(ch, t);
+        uint32_t u24  = (uint32_t)(raw & 0xFFFFFF);
+        p[2 + ch * 3]     = (u24 >> 16) & 0xFF;
+        p[2 + ch * 3 + 1] = (u24 >>  8) & 0xFF;
+        p[2 + ch * 3 + 2] =  u24        & 0xFF;
+    }
+
     p[26] = END_BYTE;
     samplesInBuf++;
 }
 
 // =============================================================================
-//  Determine how many samples fit in one notification given current MTU
+//  Timer callback – sets a flag every 4 ms (250 Hz)
 // =============================================================================
-
-static int samplesPerPacket(BLEDevice &central) {
-    int mtu = central.mtu();
-    if (mtu <= 0 || mtu < 30) mtu = 247;   // default to max if not reported
-    int payload = mtu - 3;                  // ATT overhead = 3 bytes
-    int n = payload / BYTES_PER_SAMPLE;
-    if (n < 1)  n = 1;
-    if (n > MAX_SAMPLES_PKT) n = MAX_SAMPLES_PKT;
-    return n;
+void sampleTimerCB(TimerHandle_t xTimer) {
+    (void)xTimer;
+    sampleReady = true;
 }
 
 // =============================================================================
-//  setup / loop
+//  BLE connect / disconnect callbacks
 // =============================================================================
+void connectCB(uint16_t conn_handle) {
+    activeConnHandle = conn_handle;
 
+    BLEConnection *conn = Bluefruit.Connection(conn_handle);
+    conn->requestMtuExchange(247);          // ask for max payload
+    conn->requestConnectionParameter(6, 24); // 7.5 ms – 30 ms interval
+
+    char name[64] = {};
+    conn->getPeerName(name, sizeof(name));
+    Serial.print("[BLE] Connected to: ");
+    Serial.println(name[0] ? name : "(unnamed)");
+
+    sampleTimer.start();    // begin generating samples
+}
+
+void disconnectCB(uint16_t conn_handle, uint8_t reason) {
+    (void)conn_handle;
+    activeConnHandle = BLE_CONN_HANDLE_INVALID;
+    sampleTimer.stop();
+    samplesInBuf = 0;
+    Serial.print("[BLE] Disconnected – reason 0x");
+    Serial.println(reason, HEX);
+    Bluefruit.Advertising.start(0);
+    Serial.println("[BLE] Re-advertising...");
+}
+
+// =============================================================================
+//  Command write handler (web → device)
+// =============================================================================
+void cmdWriteCB(uint16_t conn_handle, BLECharacteristic *chr,
+                uint8_t *data, uint16_t len) {
+    if (len == 0) return;
+    Serial.print("[CMD] Received: 0x");
+    Serial.println(data[0], HEX);
+    if (data[0] == 0x99) {
+        uint8_t reply[1] = { 0x01 };  // streaming OK
+        cmdReadChar.notify(conn_handle, reply, 1);
+    }
+}
+
+// =============================================================================
+//  setup
+// =============================================================================
 void setup() {
     Serial.begin(115200);
+    while (!Serial && millis() < 2000) {}
+    Serial.println("=== XIAO nRF52840 Simulated EEG Node ===");
 
-    // Initialise BLE
-    if (!BLE.begin()) {
-        Serial.println("[ERROR] BLE init failed – halting");
-        while (1) {}
-    }
+    // ── Bluefruit core ────────────────────────────────────────────────────────
+    Bluefruit.begin();
+    Bluefruit.setTxPower(4);
+    Bluefruit.setName(DEVICE_NAME);
+    Bluefruit.Periph.setConnectCallback(connectCB);
+    Bluefruit.Periph.setDisconnectCallback(disconnectCB);
 
-    BLE.setLocalName(DEVICE_NAME);
-    BLE.setDeviceName(DEVICE_NAME);
+    // ── GATT ─────────────────────────────────────────────────────────────────
+    eegService.begin();
 
-    eegService.addCharacteristic(cmdReadChar);
-    eegService.addCharacteristic(cmdWriteChar);
-    eegService.addCharacteristic(eegDataChar);
+    // cmdRead – readable + notifiable, 1 byte
+    cmdReadChar.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    cmdReadChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+    cmdReadChar.setFixedLen(1);
+    cmdReadChar.begin();
 
-    BLE.addService(eegService);
-    BLE.setAdvertisedService(eegService);
-    BLE.advertise();
+    // cmdWrite – writable (no response preferred for lowest latency), 1 byte
+    cmdWriteChar.setProperties(CHR_PROPS_WRITE | CHR_PROPS_WRITE_WO_RESP);
+    cmdWriteChar.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    cmdWriteChar.setFixedLen(1);
+    cmdWriteChar.setWriteCallback(cmdWriteCB);
+    cmdWriteChar.begin();
 
-    Serial.print("[BLE] Advertising as: ");
-    Serial.println(DEVICE_NAME);
-    Serial.print("[BLE] Service UUID : ");
-    Serial.println(SERVICE_UUID);
-    Serial.print("[Packet] Bytes/sample: ");
-    Serial.print(BYTES_PER_SAMPLE);
-    Serial.print("  Max samples/pkt: ");
-    Serial.println(MAX_SAMPLES_PKT);
+    // eegData – notifiable, variable up to TX_BUF_SIZE
+    eegDataChar.setProperties(CHR_PROPS_NOTIFY | CHR_PROPS_READ);
+    eegDataChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+    eegDataChar.setMaxLen(TX_BUF_SIZE);
+    eegDataChar.begin();
 
-    adsInit();
-    Serial.println("[ADS1299] Initialised at 250 SPS, Gain=24");
+    // ── Advertising ──────────────────────────────────────────────────────────
+    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+    Bluefruit.Advertising.addTxPower();
+    Bluefruit.Advertising.addService(eegService);
+    Bluefruit.Advertising.addName();
+    Bluefruit.Advertising.restartOnDisconnect(false); // handled in disconnectCB
+    Bluefruit.Advertising.setInterval(32, 244);       // fast 20 ms, slow 152.5 ms
+    Bluefruit.Advertising.setFastTimeout(30);
+    Bluefruit.Advertising.start(0);
+
+    // ── 250 Hz software timer – started only when a central connects ─────────
+    // SoftwareTimer::begin(period_ms, callback, oneshot)
+    sampleTimer.begin(SAMPLE_PERIOD_MS, sampleTimerCB);
+
+    Serial.println("[BLE] Advertising as: " DEVICE_NAME);
+    Serial.print("[BLE] Service: ");    Serial.println(SERVICE_UUID);
+    Serial.print("[Packet] ");
+    Serial.print(BYTES_PER_SAMPLE);    Serial.print(" bytes/sample, ");
+    Serial.print(MAX_SAMPLES_PKT);     Serial.println(" samples/pkt max");
+    Serial.println("[EEG] 8ch synthetic: delta+theta+alpha+beta+noise @ 250 SPS");
 }
 
+// =============================================================================
+//  loop
+// =============================================================================
 void loop() {
-    BLEDevice central = BLE.central();
+    // Nothing to do until a central is connected
+    if (activeConnHandle == BLE_CONN_HANDLE_INVALID) {
+        delay(10);
+        return;
+    }
 
-    if (central && central.connected()) {
-        Serial.print("[BLE] Connected: ");
-        Serial.println(central.address());
+    // Wait for the 250 Hz timer tick
+    if (!sampleReady) return;
+    sampleReady = false;
 
-        int spPkt = samplesPerPacket(central);
-        Serial.print("[BLE] Samples per packet: ");
-        Serial.println(spPkt);
-
+    BLEConnection *conn = Bluefruit.Connection(activeConnHandle);
+    if (!conn || !conn->connected()) {
         samplesInBuf = 0;
-        sampleSeq    = 0;
+        return;
+    }
 
-        while (central.connected()) {
-            BLE.poll();
+    // Generate and buffer one sample
+    float t = (float)micros() * 1e-6f;
+    appendSample(t);
 
-            // ── New ADS1299 sample available ──────────────────────────────
-            if (drdyReady) {
-                drdyReady = false;
+    // How many samples fit in one notification given current MTU?
+    uint16_t mtu     = conn->getMtu();
+    uint16_t payload = (mtu > 3) ? (uint16_t)(mtu - 3) : 20;
+    int spPkt        = payload / BYTES_PER_SAMPLE;
+    if (spPkt < 1) spPkt = 1;
+    if (spPkt > MAX_SAMPLES_PKT) spPkt = MAX_SAMPLES_PKT;
 
-                uint8_t chData[24];
-                adsReadFrame(chData);
-                appendSample(chData);
-
-                if (samplesInBuf >= spPkt) {
-                    eegDataChar.writeValue(txBuf, samplesInBuf * BYTES_PER_SAMPLE);
-                    samplesInBuf = 0;
-                    // Re-query MTU in case it changed (rare, but safe)
-                    spPkt = samplesPerPacket(central);
-                }
-            }
-
-            // ── Handle command from web app ───────────────────────────────
-            if (cmdWriteChar.written()) {
-                uint8_t cmd = cmdWriteChar.value()[0];
-                Serial.print("[CMD] Received: 0x");
-                Serial.println(cmd, HEX);
-
-                if (cmd == 0x99) {
-                    // Status reply: 0x01 = streaming OK
-                    uint8_t reply[1] = { 0x01 };
-                    cmdReadChar.writeValue(reply, 1);
-                }
-            }
+    // Flush buffer when full
+    if (samplesInBuf >= spPkt) {
+        uint16_t txLen = (uint16_t)(samplesInBuf * BYTES_PER_SAMPLE);
+        bool ok = eegDataChar.notify(activeConnHandle, txBuf, txLen);
+        if (!ok) {
+            // BLE congestion: drop oldest half to avoid accumulating lag
+            samplesInBuf = samplesInBuf / 2;
+        } else {
+            samplesInBuf = 0;
         }
-
-        Serial.println("[BLE] Central disconnected – restarting advertisement");
-        samplesInBuf = 0;
-        BLE.advertise();
     }
 }
