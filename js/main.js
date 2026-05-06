@@ -22,6 +22,57 @@ let commandValue = new Uint8Array([0x99]); //command to send back to device
 //connection flag
 var bluetoothDataFlag = false;
 
+// ── BLE Monitor globals (module-level so class methods can access) ─────────
+var blePacketCount = 0;
+var _bleRateTick = 0;
+setInterval(function() {
+    var rateEl = document.getElementById('ble-pkt-rate');
+    if (rateEl) rateEl.textContent = _bleRateTick + ' pkts/s';
+    _bleRateTick = 0;
+}, 1000);
+
+function bleMonitorAddPacket(bytes, sampleCount) {
+    _bleRateTick++;
+    blePacketCount++;
+    var cntEl = document.getElementById('ble-pkt-count');
+    if (cntEl) cntEl.textContent = blePacketCount;
+    var logDiv = document.getElementById('ble-raw-log');
+    if (!logDiv) return;
+    var hex = Array.from(bytes).map(function(b) { return b.toString(16).padStart(2,'0').toUpperCase(); }).join(' ');
+    var ts = new Date().toLocaleTimeString('en-GB', {hour12:false});
+    var entry = document.createElement('div');
+    entry.className = 'ble-log-entry';
+    entry.innerHTML = '<span class="ble-log-ts">' + ts + '</span>' +
+        '<span class="ble-log-smp">[' + sampleCount + 'smp/' + bytes.length + 'B]</span>' +
+        '<span class="ble-log-hex">' + hex + '</span>';
+    logDiv.insertBefore(entry, logDiv.firstChild);
+    while (logDiv.children.length > 50) { logDiv.removeChild(logDiv.lastChild); }
+}
+
+function updateBleStatus(status, deviceName) {
+    var dot = document.getElementById('ble-status-dot');
+    var sEl = document.getElementById('ble-conn-status');
+    var nEl = document.getElementById('ble-device-name-val');
+    if (dot) {
+        dot.className = 'ble-status-dot ' +
+            (status === 'connected' ? 'ble-dot-green' :
+             status === 'connecting' ? 'ble-dot-yellow' : 'ble-dot-red');
+    }
+    if (sEl) sEl.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+    if (nEl && deviceName) nEl.textContent = deviceName;
+}
+
+function updateBleMonitorInfo(device) {
+    var el = document.getElementById('ble-device-info');
+    if (!el) return;
+    el.innerHTML =
+        '<tr><td>Device name</td><td id="ble-device-name-val">' + (device.name || '?') + '</td></tr>' +
+        '<tr><td>Service UUID</td><td><code>' + services.controlService.uuid + '</code></td></tr>' +
+        '<tr><td>cmdRead UUID</td><td><code>' + characteristics.commandReadCharacteristic.uuid + '</code></td></tr>' +
+        '<tr><td>cmdWrite UUID</td><td><code>' + characteristics.commandWriteCharacteristic.uuid + '</code></td></tr>' +
+        '<tr><td>eegData UUID</td><td><code>' + characteristics.deviceDataCharacteristic.uuid + '</code></td></tr>';
+}
+
 if ( 'bluetooth' in navigator === false ) {
     button.style.display = 'none';
     message.innerHTML = 'This browser doesn\'t support the <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Bluetooth_API" target="_blank">Web Bluetooth API</a> :(';
@@ -64,13 +115,8 @@ class ControllerWebBluetooth {
 
     connect() {
         return navigator.bluetooth.requestDevice({
-            filters: [{
-                        name: this.name
-                    },
-                    {
-                        services: [services.controlService.uuid]
-                    }
-                ]
+            filters: [{ name: this.name }],
+            optionalServices: [services.controlService.uuid]
             })
             .then(device => {
                 console.log('Device discovered', device.name);
@@ -716,55 +762,7 @@ $(document).ready(function() {
     });
 
     // ── BLE Monitor globals ──────────────────────────────────────────────────
-    var blePacketCount = 0;
-    var _bleRateTick = 0;
-    setInterval(function() {
-        var rateEl = document.getElementById('ble-pkt-rate');
-        if (rateEl) rateEl.textContent = _bleRateTick + ' pkts/s';
-        _bleRateTick = 0;
-    }, 1000);
-
-    function bleMonitorAddPacket(bytes, sampleCount) {
-        _bleRateTick++;
-        blePacketCount++;
-        var cntEl = document.getElementById('ble-pkt-count');
-        if (cntEl) cntEl.textContent = blePacketCount;
-        var logDiv = document.getElementById('ble-raw-log');
-        if (!logDiv) return;
-        var hex = Array.from(bytes).map(function(b) { return b.toString(16).padStart(2,'0').toUpperCase(); }).join(' ');
-        var ts = new Date().toLocaleTimeString('en-GB', {hour12:false});
-        var entry = document.createElement('div');
-        entry.className = 'ble-log-entry';
-        entry.innerHTML = '<span class="ble-log-ts">' + ts + '</span>' +
-            '<span class="ble-log-smp">[' + sampleCount + 'smp/' + bytes.length + 'B]</span>' +
-            '<span class="ble-log-hex">' + hex + '</span>';
-        logDiv.insertBefore(entry, logDiv.firstChild);
-        while (logDiv.children.length > 50) { logDiv.removeChild(logDiv.lastChild); }
-    }
-
-    function updateBleStatus(status, deviceName) {
-        var dot = document.getElementById('ble-status-dot');
-        var sEl = document.getElementById('ble-conn-status');
-        var nEl = document.getElementById('ble-device-name-val');
-        if (dot) {
-            dot.className = 'ble-status-dot ' +
-                (status === 'connected' ? 'ble-dot-green' :
-                 status === 'connecting' ? 'ble-dot-yellow' : 'ble-dot-red');
-        }
-        if (sEl) sEl.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-        if (nEl && deviceName) nEl.textContent = deviceName;
-    }
-
-    function updateBleMonitorInfo(device) {
-        var el = document.getElementById('ble-device-info');
-        if (!el) return;
-        el.innerHTML =
-            '<tr><td>Device name</td><td id="ble-device-name-val">' + (device.name || '?') + '</td></tr>' +
-            '<tr><td>Service UUID</td><td><code>' + services.controlService.uuid + '</code></td></tr>' +
-            '<tr><td>cmdRead UUID</td><td><code>' + characteristics.commandReadCharacteristic.uuid + '</code></td></tr>' +
-            '<tr><td>cmdWrite UUID</td><td><code>' + characteristics.commandWriteCharacteristic.uuid + '</code></td></tr>' +
-            '<tr><td>eegData UUID</td><td><code>' + characteristics.deviceDataCharacteristic.uuid + '</code></td></tr>';
-    }
+    // (functions and vars are now at global scope above — nothing to duplicate here)
 
     //numerical data display
     function displayData() {
