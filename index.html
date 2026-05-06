@@ -1,0 +1,702 @@
+<!doctype html>
+<!--
+  Material Design Lite
+  Copyright 2015 Google Inc. All rights reserved.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      https://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License
+  https://github.com/CreativeIT/material-dashboard-lite
+
+	  Normal EEG Waveforms
+	https://emedicine.medscape.com/article/1139332-overview
+	Roy Sucholeiki, MD Director, Comprehensive Seizure and Epilepsy Program, The Neurosciences Institute at Central DuPage Hospital
+	Delta waves - 3 Hz or less
+	Theta waves - 3.5-7.5 Hz
+	Alpha waves - 8-13 Hz
+	Beta waves - Greater than 13 Hz
+	EMG signal - generally peaks at 200 Hz
+
+	EMG differes greately based on body location and electrode placement 
+
+	alpha and theta are highly correlated with attention
+-->
+<html lang="en" xmlns="http://www.w3.org/1999/html">
+<head>
+    <link rel="icon" type="image/png" href="images/DB_16х16.png">
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="description" content="A front-end template that helps you build fast, modern mobile web apps.">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>EEG Glasses Manager</title>
+
+    <!-- Add to homescreen for Chrome on Android -->
+    <meta name="mobile-web-app-capable" content="yes">
+
+
+    <!-- Add to homescreen for Safari on iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Material Design Lite">
+
+
+    <!-- Tile icon for Win8 (144x144 + tile color) -->
+    <meta name="msapplication-TileImage" content="images/touch/ms-touch-icon-144x144-precomposed.png">
+    <meta name="msapplication-TileColor" content="#3372DF">
+
+    <link href='https://fonts.googleapis.com/css?family=Roboto:400,500,300,100,700,900' rel='stylesheet'
+          type='text/css'>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+    <!-- inject:css -->
+    <link type="text/css" rel="stylesheet" href="css/web-bluetooth.css">
+    <link rel="stylesheet" href="css/lib/getmdl-select.min.css">
+    <link rel="stylesheet" href="css/application.css">
+    <!-- endinject -->
+
+    <style>
+
+    /***** RANGE SLIDER STYLES *****/
+       .range-slider {
+            z-index: 99;
+          margin: 18px 0 0 0;
+        }
+    
+        .range-slider {
+          width: 100%;
+        }
+        .sample-size-div{
+          width: 260px;
+          display: inline-block;
+          margin-top: 0px;
+        }
+        .sample-size-div .range-slider__value{
+          width: 18px;
+        }
+        .sample-size-div p.range-label{
+          text-align: center;
+        }
+        .range-slider__value.master-pose{
+          background-color: gray;
+        }
+    
+        .range-slider p{
+          margin: 0px;
+          margin-bottom: -8px;
+        }
+    
+        p.range-label{
+          color: white;
+          margin-bottom: -10px;
+          font-size: 12px;
+        }
+    
+        .range-slider__range {
+          -webkit-appearance: none;
+          width: calc(100% - (65px));
+          height: 5px;
+          border-radius: 5px;
+          background: #d7dcdf;
+          outline: none;
+          padding: 0;
+          margin: 0;
+        }
+        .range-slider__range.nn-architecture {
+    	    width: calc(100% - (110px));
+    	}
+    
+        .range-slider__range::-webkit-slider-thumb {
+          -webkit-appearance: none;
+                  appearance: none;
+      /*    width: 20px;
+          height: 20px;   */
+          width: 15px;
+          height: 15px;
+          border-radius: 50%;
+      /*    background: #2c3e50;   */
+          background: #dbca60;
+          cursor: pointer;
+          -webkit-transition: background .15s ease-in-out;
+          transition: background .15s ease-in-out;
+        }
+        .range-slider__range.transform {  /* these sliders no longer important so make smaller */
+          height: 5px;
+        }
+        .range-slider__range.transform::-webkit-slider-thumb {  /* these sliders no longer important so make smaller */
+                width: 15px;
+          height: 15px;
+        }
+        .range-slider__range::-webkit-slider-thumb:hover {
+          background: #1abc9c;
+        }
+        .range-slider__range:active::-webkit-slider-thumb {
+          background: #1abc9c;
+        }
+        .range-slider__range::-moz-range-thumb {
+          width: 20px;
+          height: 20px;
+          border: 0;
+          border-radius: 50%;
+          background: #2c3e50;
+          cursor: pointer;
+          -webkit-transition: background .15s ease-in-out;
+          transition: background .15s ease-in-out;
+        }
+        .range-slider__range::-moz-range-thumb:hover {
+          background: #1abc9c;
+        }
+        .range-slider__range:active::-moz-range-thumb {
+          background: #1abc9c; 
+          
+        }
+    
+        .range-slider__value {
+          display: inline-block;
+          position: relative;
+          font-size: 14px;
+          color: #fff;
+          line-height: 20px;
+          text-align: center;
+          border-radius: 3px;
+          background: #d2691e; 
+          padding: 5px 12px;
+          margin-left: 8px;
+        }
+        .range-slider__value:after {
+          position: absolute;
+          top: 8px;
+          left: -7px;
+          width: 0;
+          height: 0;
+          border-top: 7px solid transparent;
+          border-right: 7px solid #d9b32a;
+          border-bottom: 7px solid transparent;
+          content: '';
+        }
+    
+        ::-moz-range-track {
+          background: #d7dcdf;
+          border: 0;
+        }
+    
+        input::-moz-focus-inner,
+        input::-moz-focus-outer {
+          border: 0;
+        }
+    
+        .range-slider label {
+            position: absolute;
+            width: 20px;
+            margin-left: 5px;
+            margin-right: 5px;
+            text-align: center;
+            margin-top: 0px;
+            color: white;
+            font-size: 12px;
+        }
+    /***** END RANGE SLIDER STYLES *****/
+
+        .getmdl-select{outline:none}
+        .getmdl-select .mdl-textfield__input{cursor:pointer}
+        .getmdl-select .selected{background-color:#ddd}
+        .getmdl-select .mdl-icon-toggle__label{float:right;margin-top:-30px;color:rgba(0,0,0,0.4);transform:rotate(0);transition:transform 0.3s}
+        .getmdl-select.is-focused .mdl-icon-toggle__label{color:#3f51b5;transform:rotate(180deg)}
+        .getmdl-select .mdl-menu__container{width:100% !important;margin-top:2px}
+        .getmdl-select .mdl-menu__container .mdl-menu{width:100%}
+        .getmdl-select .mdl-menu__container .mdl-menu .mdl-menu__item{font-size:16px}
+        .getmdl-select__fix-height .mdl-menu__container .mdl-menu{overflow-y:auto;max-height:288px !important}
+        .getmdl-select__fix-height .mdl-menu.mdl-menu--top-left{bottom:auto;top:0}
+
+        /*# sourceMappingURL=getmdl-select.min.css.map */
+
+        .streaming-data{
+          /*  height: 450px; */
+            overflow: visible; 
+        }
+        .streaming-data .mdl-card__supporting-text{
+            overflow: visible;
+        }
+        .data-select-dropdown{
+            width: 225px;
+        }
+        .getmdl-select .mdl-icon-toggle__label {
+	    	color: white;
+		}
+		.mdl-card__title{
+			padding: 10px 16px;
+		}
+		.options-card .mdl-cell{
+			margin-top: 10px;
+			margin-bottom: 10px;
+		}
+		.options-card, .options-card .mdl-card__supporting-text, .options-card .mdl-card {
+			overflow: visible;
+		} 
+		.mdl-textfield--floating-label.is-dirty .mdl-textfield__label{font-size: 16px;}
+		.streaming-data__container .mdl-textfield--floating-label.is-dirty .mdl-textfield__label{
+			font-weight: 700;
+			font-size: 18px;
+		}
+		.mdl-textfield--floating-label.is-dirty .mdl-textfield__label.node1-label { color: rgb(255, 255, 0); }
+		.mdl-textfield--floating-label.is-dirty .mdl-textfield__label.node2-label { color: rgb(185, 76, 255);   }
+		.mdl-textfield--floating-label.is-dirty .mdl-textfield__label.node3-label { color: rgb(255, 127, 0);   }
+		.mdl-textfield--floating-label.is-dirty .mdl-textfield__label.node4-label { color: rgb(7, 185, 252); }
+		.mdl-textfield--floating-label.is-dirty .mdl-textfield__label.node5-label { color: rgb(246, 70, 91);   }
+
+		#connect{background-color: #00bcd4;}
+
+		#data-message div{
+			display: inline-block;
+			font-size: 20px;
+			margin-left: 18px;
+		}
+		.data-message-value{
+			color: rgba(255, 193, 7, 0.8);
+		}
+
+		.nn-manager-card button{
+			width: 260px;
+			margin-left: 12px;
+		}
+
+		.mdl-layout__drawer{
+			transform: translateX(-400px);
+			width: 400px;
+			color: white;
+		}
+		.mdl-layout__drawer.is-visible{
+			transform: translateX(0);
+		}
+
+		.mdl-layout__drawer.drawer-navigation .mdl-navigation{
+			padding-top: 8px;
+		}
+
+		.drawer-text-info{ width: calc(100% - 32px); }
+    </style>
+
+    <!-- Good Ol' JQuery -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+
+    <!-- Material Design Lite UI Kit -->
+    <script src="js/material.min.js"></script>
+
+    <!-- library for realtime streaming data visualization -->
+    <script type="text/javascript" src="js/smoothie.js"></script> 
+
+    <!-- library for neural network -->
+    <script type="text/javascript" src="js/synaptic.js"></script>
+
+    <!-- recorded EEG data from EEG glasses -->
+    <script type="text/javascript" src="js/test_eeg_data.js"></script>
+    <script type="text/javascript" src="js/test_eeg_data_true.js"></script>
+    <script type="text/javascript" src="js/test_eeg_data_false.js"></script>
+
+    <!-- Web Bluetooth connection -->
+    <script>
+        var button = document.getElementById("connect");
+        var message = document.getElementById("message");
+    </script>
+
+    <!-- primary app code get web bluetooth data, collect data from model, apply to neural network -->
+    <script type="text/javascript" src="js/main.js"></script> 
+
+</head>
+<body>
+
+
+<!-- <div class="mdl-layout mdl-js-layout mdl-layout--fixed-drawer mdl-layout--fixed-header is-small-screen"> -->
+<div class="mdl-layout mdl-js-layout mdl-layout--fixed-header is-small-screen">
+    <header class="mdl-layout__header">
+        <div class="mdl-layout__header-row">
+
+	        <span class="mdl-layout-title">
+	            EEG Glasses Manager
+	        </span>
+
+            <button id="connect" class="btn mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--colored-blue" style="margin-left: 10px;">
+            	<i class="material-icons">bluetooth</i>
+                CONNECT
+            </button>
+
+			<button id="true-test-data" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--colored-yellow" style="margin-left: 10px;">
+                <i class="material-icons">trending_up</i>
+                Concentration Test Data
+            </button>
+
+            <button id="false-test-data" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--colored-yellow" style="margin-left: 10px;">
+                <i class="material-icons">trending_down</i>
+                Relaxation Test Data
+            </button>
+
+            <div class="mdl-layout-spacer"></div>
+
+        </div>
+    </header>
+
+    <div class="mdl-layout__drawer">
+        <header>INFO</header>
+        <div class="mdl-cell drawer-text-info">
+          <p>EEG data from concentrating ('true' data) automatically loads with the site. Press the "RELAXATION TEST DATA" button to switch over to a recording of EEG data while relaxing and vice versa to switch back.</p>
+        </br><p>To train a neural network that can classify (distinguish) concentration vs relaxation EEG data, press the "COLLECT TRUE DATA" button while the concentration EEG recording is playing. You will need at least 200 samples. Then switch to the relaxation data and press the "COLLECT FALSE DATA" button. Press the "TRAIN NEURAL NETWORK" button and then the "ACTIVATE NEURAL NETWORK" button.</p>
+      </br><p>Because this tool uses a simple MLP (Multi Layer Perceptron) neural network, the raw data signal won't work well under most settings. Switch all the nodes to "variance" before collecting data for fast results.</p>
+    </br><p>If you want to select specific EEG waves for analysis, just set all the nodes to that frequency band</p>
+	    </div>
+
+	    <nav class="mdl-navigation drawer-navigation">
+            <a class="mdl-navigation__link" href="https://hackaday.io/project/160618-35-nrf52-ecg-bracelet-hacked-into-eeg-glasses" target="_blank">
+                <i class="material-icons">link</i>
+                EEG Glasses Hackaday Project Page
+            </a>
+            
+            <a class="mdl-navigation__link" href="https://hackaday.io/curtwhite" target="_blank">
+                <i class="material-icons">link</i>
+                Other Hackaday Projects
+            </a>
+        </nav>
+        
+    </div>
+
+    <main class="mdl-layout__content">
+
+        <div class="mdl-grid mdl-grid--no-spacing">
+
+            <div class="mdl-grid mdl-cell mdl-cell--10-col-desktop mdl-cell--10-col-tablet mdl-cell--4-col-phone mdl-cell--top">
+
+                <!-- Data Visualization-->
+                <div class="mdl-cell mdl-cell--12-col-desktop mdl-cell--12-col-tablet mdl-cell--2-col-phone">
+                    <div class="mdl-card mdl-shadow--2dp pie-chart streaming-data">
+                        <div class="mdl-card__title">
+                            <h2 class="mdl-card__title-text">Streaming Device Data</h2>
+                            <div class="mdl-layout-spacer"></div>
+                            <div class="mdl-card__subtitle-text">
+                             <!--   <i class="material-icons">waves</i> -->
+                                <b>Delta Waves:</b> below 3 Hz &nbsp;&nbsp;&nbsp;&nbsp;<b>Theta Waves:</b> 3.5-7.5 Hz &nbsp;&nbsp;&nbsp;&nbsp;<b>Alpha Waves:</b> 8-13 Hz &nbsp;&nbsp;&nbsp;&nbsp;<b>Beta Waves:</b> 13-20 Hz &nbsp;&nbsp;&nbsp;&nbsp;<b>EMG Range:</b> 20-250 Hz 
+                            </div>
+                        </div>
+                        <div class="mdl-card__supporting-text">
+                            <div class="streaming-data__container">
+
+                                <!-- Data Selection Node 1-->
+							    <div class="data-select-dropdown mdl-textfield mdl-js-textfield mdl-textfield--floating-label getmdl-select getmdl-select__fix-height">
+							        <input type="text" value="" class="mdl-textfield__input" id="node1" readonly>
+							        <input type="hidden" value="" name="node1" id="code-node1">
+							        <i class="mdl-icon-toggle__label material-icons">keyboard_arrow_down</i>
+							        <label for="node1" class="mdl-textfield__label node1-label">Node 1:&nbsp;<span class="delta-data"></span></label>
+							        <ul for="node1" class="mdl-menu mdl-menu--bottom-left mdl-js-menu">
+							        	<li class="mdl-menu__item" data-val="DR" data-selected="true">Delta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="DA">Delta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="DV">Delta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="TR">Theta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="TA">Theta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="TV">Theta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="AR">Alpha Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="AA">Alpha Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="AV">Alpha Wave Variance</li>
+							          	<li class="mdl-menu__item" data-val="BR">Beta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="BA">Beta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="BV">Beta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="ER">EMG Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="EA">EMG Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="EV">EMG Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="NONE">NONE</li>
+							        </ul>
+							    </div>
+
+							    <!-- Data Selection Node 2-->
+							    <div class="data-select-dropdown mdl-textfield mdl-js-textfield mdl-textfield--floating-label getmdl-select getmdl-select__fix-height">
+							        <input type="text" value="" class="mdl-textfield__input" id="node2" readonly>
+							        <input type="hidden" value="" name="node2" id="code-node2">
+							        <i class="mdl-icon-toggle__label material-icons">keyboard_arrow_down</i>
+							        <label for="node2" class="mdl-textfield__label node2-label">Node 2:&nbsp;<span class="theta-data"></span></label>
+							        <ul for="node2" class="mdl-menu mdl-menu--bottom-left mdl-js-menu">
+							        	<li class="mdl-menu__item" data-val="DR">Delta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="DA">Delta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="DV">Delta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="TR" data-selected="true">Theta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="TA">Theta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="TV">Theta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="AR">Alpha Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="AA">Alpha Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="AV">Alpha Wave Variance</li>
+							          	<li class="mdl-menu__item" data-val="BR">Beta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="BA">Beta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="BV">Beta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="ER">EMG Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="EA">EMG Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="EV">EMG Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="NONE">NONE</li>
+							        </ul>
+							    </div>
+
+							    <!-- Data Selection Node 3-->
+							    <div class="data-select-dropdown mdl-textfield mdl-js-textfield mdl-textfield--floating-label getmdl-select getmdl-select__fix-height">
+							        <input type="text" value="" class="mdl-textfield__input" id="node3" readonly>
+							        <input type="hidden" value="" name="node3" id="code-node3">
+							        <i class="mdl-icon-toggle__label material-icons">keyboard_arrow_down</i>
+							        <label for="node3" class="mdl-textfield__label node3-label">Node 3:&nbsp;<span class="alpha-data"></span></label>
+							        <ul for="node3" class="mdl-menu mdl-menu--bottom-left mdl-js-menu">
+							        	<li class="mdl-menu__item" data-val="DR">Delta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="DA">Delta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="DV">Delta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="TR">Theta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="TA">Theta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="TV">Theta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="AR" data-selected="true">Alpha Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="AA">Alpha Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="AV">Alpha Wave Variance</li>
+							          	<li class="mdl-menu__item" data-val="BR">Beta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="BA">Beta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="BV">Beta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="ER">EMG Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="EA">EMG Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="EV">EMG Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="NONE">NONE</li>
+							        </ul>
+							    </div>
+
+							    <!-- Data Selection Node 4-->
+							    <div class="data-select-dropdown mdl-textfield mdl-js-textfield mdl-textfield--floating-label getmdl-select getmdl-select__fix-height">
+							        <input type="text" value="" class="mdl-textfield__input" id="node4" readonly>
+							        <input type="hidden" value="" name="node4" id="code-node4">
+							        <i class="mdl-icon-toggle__label material-icons">keyboard_arrow_down</i>
+							        <label for="node4" class="mdl-textfield__label node4-label">Node 4:&nbsp;<span class="beta-data"></span></label>
+							        <ul for="node4" class="mdl-menu mdl-menu--bottom-left mdl-js-menu">
+							        	<li class="mdl-menu__item" data-val="DR">Delta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="DA">Delta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="DV">Delta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="TR">Theta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="TA">Theta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="TV">Theta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="AR">Alpha Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="AA">Alpha Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="AV">Alpha Wave Variance</li>
+							          	<li class="mdl-menu__item" data-val="BR" data-selected="true">Beta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="BA">Beta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="BV">Beta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="ER">EMG Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="EA">EMG Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="EV">EMG Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="NONE">NONE</li>
+							        </ul>
+							    </div>
+
+							    <!-- Data Selection Node 5-->
+							    <div class="data-select-dropdown mdl-textfield mdl-js-textfield mdl-textfield--floating-label getmdl-select getmdl-select__fix-height">
+							        <input type="text" value="" class="mdl-textfield__input" id="node5" readonly>
+							        <input type="hidden" value="" name="node5" id="code-node5">
+							        <i class="mdl-icon-toggle__label material-icons">keyboard_arrow_down</i>
+							        <label for="node5" class="mdl-textfield__label node5-label">Node 5:&nbsp;<span class="emg-data"></span></label>
+							        <ul for="node5" class="mdl-menu mdl-menu--bottom-left mdl-js-menu">
+							        	<li class="mdl-menu__item" data-val="DR">Delta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="DA">Delta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="DV">Delta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="TR">Theta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="TA">Theta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="TV">Theta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="AR">Alpha Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="AA">Alpha Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="AV">Alpha Wave Variance</li>
+							          	<li class="mdl-menu__item" data-val="BR">Beta Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="BA">Beta Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="BV">Beta Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="ER" data-selected="true">EMG Wave Raw</li>
+							            <li class="mdl-menu__item" data-val="EA">EMG Wave Averaged</li>
+							            <li class="mdl-menu__item" data-val="EV">EMG Wave Variance</li>
+							            <li class="mdl-menu__item" data-val="NONE">NONE</li>
+							        </ul>
+							    </div>
+                            </div>
+
+					        <!-- container for smoothie.js timeseries streaming data chart (canvas) -->
+					        <div id="streaming-data-chart" class="smoothie-container"></div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Neural Network Manager-->
+                <div class="mdl-cell mdl-cell--12-col-desktop mdl-cell--12-col-tablet mdl-cell--2-col-phone">
+                    <div class="mdl-card mdl-shadow--2dp pie-chart nn-manager-card">
+                        <div class="mdl-card__title">
+                            <h2 class="mdl-card__title-text">Neural Network Manager</h2>
+                        </div>
+                        <div class="mdl-card__supporting-text">
+
+                        	<div id="data-message" class="mdl-cell mdl-cell--10-col-desktop mdl-cell--10-col-tablet mdl-cell--12-col-phone">
+                        		<!-- number of samples to collect every time one of the collection buttons is pressed -->
+					            <div class="range-slider sample-size-div">
+					                <p class="range-label"># Samples to Collect</p>
+					                <input class="range-slider__range sample-size" type="range" value="25" min="25" max="300" step="25">
+					                <span class="range-slider__value">0</span>
+					            </div>
+
+						    	<div>NN TRUE:&nbsp;<span class="message-nn-true data-message-value">0</span></div>
+						    	<div>NN FALSE:&nbsp;<span class="message-nn-false data-message-value">0</span></div>
+						    	<div>Neural Network&nbsp;<span class="nn-score-label data-message-value">SCORE</span>:&nbsp;<span class="message-nn-score data-message-value">none</span></div>
+						    </div>
+
+                            <div class="nn-manager__container">                           	
+                            	<div id="data-controls" class="mdl-cell mdl-cell--10-col-desktop mdl-cell--10-col-tablet mdl-cell--12-col-phone">
+	                            	<button id="collect-true" class="collect-true mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--colored-yellow">
+	                            		<i class="material-icons">thumb_up_alt</i>
+						                Collect True Data
+						            </button>
+						            <button id="collect-false" class="collect-false mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--colored-yellow">
+						            	<i class="material-icons">thumb_down_alt</i>
+						                Collect False Data
+						            </button>
+						            <button id="clear" class="clear mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--colored-yellow">
+						            	<i class="material-icons">delete_sweep</i>
+						                Clear Data
+						            </button>
+						        </div>
+
+						        <div id="nn-controls" class="mdl-cell mdl-cell--10-col-desktop mdl-cell--10-col-tablet mdl-cell--12-col-phone">
+						            <button id="train-btn" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--colored-red">
+						            	<i class="material-icons">school</i>
+						                Train Neural Network
+						            </button>
+						            <button id="activate-btn" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--colored-red">
+						            	<i class="material-icons">power_settings_new</i>
+						                Activate Neural Network
+						            </button>
+						            <button id="export-btn" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--colored-red">
+						            	<i class="material-icons">save_alt</i>
+						                Export Neural Network
+						            </button>
+						        </div>
+					          
+                            </div>
+
+                            <!-- console messages -->
+                            <span id="message"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Exported Neural Network Text-->
+                <div class="mdl-cell mdl-cell--12-col-desktop mdl-cell--12-col-tablet mdl-cell--2-col-phone">
+                    <div class="mdl-card mdl-shadow--2dp pie-chart exports-card">
+                        <div class="mdl-card__title">
+                        	<i class="material-icons">code</i>
+                            <a href="https://github.com/cazala/synaptic/wiki/Networks" target="_blank"><h2 class="mdl-card__title-text">Export Standalone Neural Network Function</h2></a>
+                        </div>
+                        <div class="mdl-card__supporting-text">
+                            <div class="nn-manager__container">
+                            	<textarea id="dump-print" class="mdl-textfield__input" type="text" rows="10" spellcheck="false"  style="z-index: auto; position: relative; line-height: normal; font-size: 16px; transition: none 0s ease 0s; color: black;background: white !important;">
+No exported neural network data to display. 
+1) Collect 'true' and 'false' data 
+2) Press the "Train Neural Network" button
+3) Press the "Export Neural Network" button
+The export data will provide an array or neural network weight values and an activation function. Although the export syntax is JavaScript, it consists of nothing more than simple floating point calculations and can easily be used in any programming language including Arduino (simplified C for microcontrollers).
+                            		</textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+             
+              
+                <!-- Table-->
+                <div class="mdl-cell mdl-cell--12-col-desktop mdl-cell--12-col-tablet mdl-cell--4-col-phone ">
+                  
+                    </table>
+                </div>
+            </div>
+
+            <div class="mdl-grid mdl-cell mdl-cell--2-col-desktop mdl-cell--2-col-tablet mdl-cell--4-col-phone mdl-cell--top">
+                <!-- Robot card-->
+                <div class="options-card mdl-cell mdl-cell--12-col-desktop mdl-cell--12-col-tablet mdl-cell--12-col-phone">
+                    <div class="mdl-card mdl-shadow--2dp">
+                        <div class="mdl-card__title mdl-card--expand">
+                        	<i class="material-icons pull-left">settings</i>
+                            <h2 class="mdl-card__title-text">OPTIONS</h2>
+                        </div>
+                        <div class="mdl-card__supporting-text">
+                        	<div class="ui-section pull-left">
+	                            <h6>DATA TYPE</h6>
+	                            <ul class="mdl-list">
+	                                <li class="mdl-list__item">
+	                                    <label class="mdl-radio mdl-js-radio mdl-js-ripple-effect mdl-radio--colored-yellow" for="option-1">
+	                                        <input type="radio" id="option-1" class="mdl-radio__button" name="options" value="FIR" checked>
+	                                        <span class="mdl-radio__label">FIR Filtered</span>
+	                                    </label>
+	                                </li>
+	                                <li class="mdl-list__item">
+	                                    <label class="mdl-radio mdl-js-radio mdl-js-ripple-effect mdl-radio--colored-yellow" for="option-2">
+	                                        <input type="radio" id="option-2" class="mdl-radio__button" name="options" value="FFT">
+	                                        <span class="mdl-radio__label">FFT Frequency Domain</span>
+	                                    </label>
+	                                </li>
+	                            </ul>
+                            <div>
+
+                            <div class="ui-section pull-left">
+                            <!--	<i class="material-icons pull-left">functions</i> -->
+	                            <h6>NEURAL NETWORK HYPERPARAMETERS</h6>
+							  	<div class="mdl-cell mdl-cell--6-col mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                                    <input class="mdl-textfield__input" type="text" id="rate-input" value="0.06"/>
+                                    <label class="mdl-textfield__label" for="rate-input">Training Rate</label>
+                                </div>
+							  	<div class="mdl-cell mdl-cell--6-col mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                                    <input class="mdl-textfield__input" type="text" id="iterations-input" value="750"/>
+                                    <label class="mdl-textfield__label" for="iterations-input">Training Iterations</label>
+                                </div>
+                                <div class="mdl-cell mdl-cell--6-col mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                                    <input class="mdl-textfield__input" type="text" id="error-input" value="0.05"/>
+                                    <label class="mdl-textfield__label" for="error-input">Error Rate</label>
+                                </div>
+
+                                <!-- Under Development, not working yet-->
+							    <div class="mdl-cell mdl-cell--6-col mdl-textfield mdl-js-textfield mdl-textfield--floating-label getmdl-select getmdl-select__fix-height">
+							        <input type="text" value="" class="nn-architecture mdl-textfield__input" id="nn-architecture" readonly>
+							        <input type="hidden" value="" name="architecture">
+							        <i class="mdl-icon-toggle__label material-icons">keyboard_arrow_down</i>
+							        <label for="architecture" class="mdl-textfield__label">Neural Network Architecture</label>
+							        <ul for="architecture" class="mdl-menu mdl-menu--bottom-left mdl-js-menu">
+							        	<li class="mdl-menu__item" data-val="5:2:1">5:2:1</li> 
+                        <li class="mdl-menu__item" data-val="5:5:1">5:5:1</li>
+                        <li class="mdl-menu__item" data-val="5:10:1">5:10:1</li>
+							          <li class="mdl-menu__item" data-val="5:5:5:1" data-selected="true">5:5:5:1</li>
+							         <li class="mdl-menu__item" data-val="5:10:10:1">5:10:10:1</li>
+
+							        </ul>
+							        <br><p>*Neural networks built using <a href="https://github.com/cazala/synaptic" target="_blank"> SynapticJS framework</a> MLPs (Multi Layer Perceptrons) and <a href="https://github.com/cazala/synaptic/wiki/Networks" target="_blank">model standalone export</a></p>
+							    </div>
+                            <div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </main>
+</div>
+
+ <script>
+
+    //http://creativeit.github.io/getmdl-select/
+    !function(){"use strict";function e(){c.classList.remove("disabled"),n.classList.remove("disabled"),l.scrollLeft<=0&&c.classList.add("disabled"),l.scrollLeft+l.clientWidth+5>=l.scrollWidth&&n.classList.add("disabled")}function t(e){l.scrollLeft+=e}var n=document.querySelector(".scrollindicator.scrollindicator--right"),c=document.querySelector(".scrollindicator.scrollindicator--left"),l=document.querySelector(".docs-navigation"),i=40; /*l.addEventListener("scroll",e),e(),n.addEventListener("click",t.bind(null,i)),n.addEventListener("tap",t.bind(null,i)),c.addEventListener("click",t.bind(null,-i)),c.addEventListener("tap",t.bind(null,-i))}(),function(){"use strict";var e=document.querySelector(".download-button-container");e&&e.addEventListener("click",function(){ga("send",{hitType:"event",eventCategory:"click",eventAction:"mdl-download"})})}(),function(){"use strict";*/var e=document.querySelectorAll('[href=""]');Array.prototype.forEach.call(e,function(e){e.addEventListener("click",function(e){e.preventDefault()})})}();
+
+      "use strict";!function(){function e(){getmdlSelect.init(".getmdl-select")}window.addEventListener?window.addEventListener("load",e,!1):window.attachEvent&&window.attachEvent("onload",e)}();
+      var getmdlSelect={_defaultValue:{width:300},_addEventListeners:function(e){var t=e.querySelector("input"),n=e.querySelector('input[type="hidden"]'),l=e.querySelectorAll("li"),a=e.querySelector(".mdl-js-menu"),o=e.querySelector(".mdl-icon-toggle__label"),i="",c="",s="",u=!1,d=function(o){var i=o.textContent.trim();
+        if(t.value=i,l.forEach(function(e){e.classList.remove("selected")}),o.classList.add("selected"),e.MaterialTextfield.change(i),setTimeout(function(){e.MaterialTextfield.updateClasses_()},250),n.value=o.dataset.val||"",c=t.value,s=n.value,"createEvent"in document){var u=document.createEvent("HTMLEvents");u.initEvent("change",!1,!0),a.MaterialMenu.hide(),t.dispatchEvent(u)}else t.fireEvent("onchange")},r=function(){u=!1,t.value=c,n.value=s,e.querySelector(".mdl-menu__container").classList.contains("is-visible")||e.classList.remove("is-focused");var l=document.querySelectorAll(".getmdl-select .mdl-js-menu");[].forEach.call(l,function(e){e.MaterialMenu.hide()});var o=new Event("closeSelect");a.dispatchEvent(o)};
+        document.body.addEventListener("click",r,!1),e.onkeydown=function(l){9==l.keyCode&&(t.value=c,n.value=s,a.MaterialMenu.hide(),e.classList.remove("is-focused"))},t.onfocus=function(e){a.MaterialMenu.show(),a.focus(),u=!0},t.onblur=function(e){e.stopPropagation()},t.onclick=function(t){t.stopPropagation(),a.classList.contains("is-visible")?(a.MaterialMenu.hide(),u=!1):(a.MaterialMenu.show(),r(),e.classList.add("is-focused"),u=!0)},t.onkeydown=function(l){27==l.keyCode&&(t.value=c,n.value=s,a.MaterialMenu.hide(),e.MaterialTextfield.onBlur_(),""!==i&&(e.querySelector(".mdl-textfield__label").textContent=i,i=""))},a.addEventListener("closeSelect",function(l){t.value=c,n.value=s,e.classList.remove("is-focused"),""!==i&&(e.querySelector(".mdl-textfield__label").textContent=i,i="")}),a.onkeydown=function(l){27==l.keyCode&&(t.value=c,n.value=s,e.classList.remove("is-focused"),""!==i&&(e.querySelector(".mdl-textfield__label").textContent=i,i=""))},o&&(o.onclick=function(l){l.stopPropagation(),u?(a.MaterialMenu.hide(),u=!1,e.classList.remove("is-focused"),e.MaterialTextfield.onBlur_(),t.value=c,n.value=s):(r(),e.MaterialTextfield.onFocus_(),t.focus(),a.MaterialMenu.show(),u=!0)}),[].forEach.call(l,function(n){n.onfocus=function(){e.classList.add("is-focused");
+            var l=n.textContent.trim();
+            t.value=l,e.classList.contains("mdl-textfield--floating-label")||""!=i||(i=e.querySelector(".mdl-textfield__label").textContent.trim(),e.querySelector(".mdl-textfield__label").textContent="")},n.onclick=function(){d(n)},n.dataset.selected&&d(n)})},init:function(e){var t=document.querySelectorAll(e);[].forEach.call(t,function(e){getmdlSelect._addEventListeners(e),componentHandler.upgradeElement(e),componentHandler.upgradeElement(e.querySelector("ul"))})}};
+//# sourceMappingURL=getmdl-select.min.js.map
+
+</script>
+
+</body>
+</html>
