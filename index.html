@@ -36,7 +36,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="description" content="A front-end template that helps you build fast, modern mobile web apps.">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>EEG Glasses Manager</title>
+    <title>hiibrarahmad EEG GUI</title>
 
     <!-- Add to homescreen for Chrome on Android -->
     <meta name="mobile-web-app-capable" content="yes">
@@ -281,11 +281,48 @@
 		}
 
 		.drawer-text-info{ width: calc(100% - 32px); }
-    </style>
 
-    <!-- Good Ol' JQuery -->
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+		/* ── Tab bar dark theme ──────────────────────────────── */
+		.mdl-tabs__tab-bar {
+			background: #263238;
+			border-bottom: 2px solid #37474f;
+		}
+		.mdl-tabs__tab {
+			color: rgba(255,255,255,0.6) !important;
+			font-size: 13px;
+			font-weight: 600;
+			letter-spacing: 0.5px;
+		}
+		.mdl-tabs__tab.is-active {
+			color: #FFD700 !important;
+		}
+		.mdl-tabs__tab-bar .mdl-tabs__indicator {
+			background: #FFD700;
+		}
+		.mdl-tabs__panel {
+			padding: 0;
+			background: transparent;
+		}
 
+		/* ── Raw channel charts ──────────────────────────────── */
+		.perch-row {
+			display: flex;
+			align-items: center;
+			margin-bottom: 4px;
+			background: #111;
+			border-radius: 3px;
+			padding: 2px 0;
+		}
+		.perch-label {
+			font-size: 13px;
+			font-weight: 700;
+			width: 38px;
+			text-align: center;
+			flex-shrink: 0;
+		}
+		.perch-row canvas { display: block; flex: 1; }
+		#allch-chart-container canvas { display: block; width: 100%; }
+		.allch-legend { font-size: 11px; color: #aaa; }
     <!-- Material Design Lite UI Kit -->
     <script src="js/material.min.js"></script>
 
@@ -319,7 +356,7 @@
         <div class="mdl-layout__header-row">
 
 	        <span class="mdl-layout-title">
-	            EEG Glasses Manager
+	            hiibrarahmad EEG GUI
 	        </span>
 
             <button id="connect" class="btn mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--colored-blue" style="margin-left: 10px;">
@@ -369,7 +406,18 @@
 
         <div class="mdl-grid mdl-grid--no-spacing">
 
-            <div class="mdl-grid mdl-cell mdl-cell--10-col-desktop mdl-cell--10-col-tablet mdl-cell--4-col-phone mdl-cell--top">
+            <div class="mdl-cell mdl-cell--10-col-desktop mdl-cell--10-col-tablet mdl-cell--4-col-phone mdl-cell--top">
+
+                <div class="mdl-tabs mdl-js-tabs mdl-js-ripple-effect">
+                    <div class="mdl-tabs__tab-bar">
+                        <a href="#tab-nn"    class="mdl-tabs__tab is-active">&#9881; Neural Network</a>
+                        <a href="#tab-allch" class="mdl-tabs__tab">&#128200; All Channels Raw</a>
+                        <a href="#tab-perch" class="mdl-tabs__tab">&#128201; Per Channel Raw</a>
+                    </div>
+
+                    <!-- ── Tab 1: Neural Network + Streaming Data ────────────── -->
+                    <section class="mdl-tabs__panel is-active" id="tab-nn">
+                    <div class="mdl-grid">
 
                 <!-- Data Visualization-->
                 <div class="mdl-cell mdl-cell--12-col-desktop mdl-cell--12-col-tablet mdl-cell--2-col-phone">
@@ -606,12 +654,53 @@ The export data will provide an array or neural network weight values and an act
 
              
               
-                <!-- Table-->
-                <div class="mdl-cell mdl-cell--12-col-desktop mdl-cell--12-col-tablet mdl-cell--4-col-phone ">
-                  
-                    </table>
-                </div>
-            </div>
+                <!-- Table (placeholder)-->
+                <div class="mdl-cell mdl-cell--12-col-desktop mdl-cell--12-col-tablet mdl-cell--4-col-phone"></div>
+
+                    </div><!-- end inner mdl-grid (tab-nn) -->
+                    </section><!-- end #tab-nn -->
+
+                    <!-- ── Tab 2: All Channels Raw ───────────────────────────── -->
+                    <section class="mdl-tabs__panel" id="tab-allch">
+                        <div class="mdl-cell mdl-cell--12-col-desktop mdl-cell--12-col-tablet mdl-cell--4-col-phone">
+                            <div class="mdl-card mdl-shadow--2dp">
+                                <div class="mdl-card__title">
+                                    <h2 class="mdl-card__title-text">Raw EEG &#8211; All 8 Channels</h2>
+                                    <div class="mdl-layout-spacer"></div>
+                                    <span class="allch-legend" id="allch-legend-text">
+                                        <span style="color:#FFFF00">&#9644; CH1</span>&nbsp;
+                                        <span style="color:#B94CFF">&#9644; CH2</span>&nbsp;
+                                        <span style="color:#FF7F00">&#9644; CH3</span>&nbsp;
+                                        <span style="color:#07B9FC">&#9644; CH4</span>&nbsp;
+                                        <span style="color:#F6465B">&#9644; CH5</span>&nbsp;
+                                        <span style="color:#48F444">&#9644; CH6</span>&nbsp;
+                                        <span style="color:#FF00FF">&#9644; CH7</span>&nbsp;
+                                        <span style="color:#00FFCC">&#9644; CH8</span>
+                                    </span>
+                                </div>
+                                <div class="mdl-card__supporting-text">
+                                    <div id="allch-chart-container"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </section><!-- end #tab-allch -->
+
+                    <!-- ── Tab 3: Per Channel Raw ─────────────────────────────── -->
+                    <section class="mdl-tabs__panel" id="tab-perch">
+                        <div class="mdl-cell mdl-cell--12-col-desktop mdl-cell--12-col-tablet mdl-cell--4-col-phone">
+                            <div class="mdl-card mdl-shadow--2dp">
+                                <div class="mdl-card__title">
+                                    <h2 class="mdl-card__title-text">Raw EEG &#8211; Per Channel (8 ch)</h2>
+                                </div>
+                                <div class="mdl-card__supporting-text" id="perch-charts-container">
+                                    <!-- 8 chart rows injected by JS -->
+                                </div>
+                            </div>
+                        </div>
+                    </section><!-- end #tab-perch -->
+
+                </div><!-- end .mdl-tabs -->
+            </div><!-- end mdl-cell--10-col -->
 
             <div class="mdl-grid mdl-cell mdl-cell--2-col-desktop mdl-cell--2-col-tablet mdl-cell--4-col-phone mdl-cell--top">
                 <!-- Robot card-->

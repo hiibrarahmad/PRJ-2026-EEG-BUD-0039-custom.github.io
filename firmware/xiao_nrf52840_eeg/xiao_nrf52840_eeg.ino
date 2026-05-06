@@ -32,7 +32,7 @@
 #include <bluefruit.h>
 
 // ── BLE identifiers ──────────────────────────────────────────────────────────
-#define DEVICE_NAME     "EEGlasses"
+#define DEVICE_NAME     "hiibrarahmad-EEG"
 #define SERVICE_UUID    "0000a000-0000-1000-8000-00805f9b34fb"
 #define CHAR_READ_UUID  "0000a001-0000-1000-8000-00805f9b34fb"
 #define CHAR_WRITE_UUID "0000a002-0000-1000-8000-00805f9b34fb"

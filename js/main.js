@@ -326,7 +326,7 @@ $(document).ready(function() {
 
     //Web Bluetooth connection button and ongoing device data update function
     button.onclick = function(e) {
-        var sensorController = new ControllerWebBluetooth("EEGlasses");
+        var sensorController = new ControllerWebBluetooth("hiibrarahmad-EEG");
         sensorController.connect();
 
         //on bluetooth notification value update ie new data over bluetooth
@@ -513,6 +513,19 @@ $(document).ready(function() {
                 }
 
                 displayData();
+
+                // ── Feed raw channel data to raw-view charts ─────────────────
+                if (state.ch1 !== undefined) {
+                    var rawTs = timeStamp;
+                    // Convert normalised 0-1 back to raw 24-bit signed integer
+                    // (norm = (raw + 8388608) / 16777215  →  raw = norm * 16777215 - 8388608)
+                    for (var ri = 0; ri < 8; ri++) {
+                        var rawVal = state['ch' + (ri + 1)] * 16777215 - 8388608;
+                        rawAllChSeries[ri].append(rawTs, rawVal);
+                        rawPerChSeries[ri].append(rawTs, rawVal);
+                    }
+                }
+
                 bluetoothDataFlag = false;
             }
 
@@ -570,6 +583,75 @@ $(document).ready(function() {
         //redraw chart
         streamingChart.streamTo(document.getElementById("chart-canvas"), 350 /*delay*/ );
     });
+
+
+    /*******************************************************************************************************************
+    *************************** RAW CHANNEL CHARTS  (All-Channels + Per-Channel) **************************************
+    *******************************************************************************************************************/
+
+    var CH_COLORS = [
+        'rgb(255,255,0)',   // CH1 yellow
+        'rgb(185,76,255)',  // CH2 purple
+        'rgb(255,127,0)',   // CH3 orange
+        'rgb(7,185,252)',   // CH4 cyan
+        'rgb(246,70,91)',   // CH5 red
+        'rgb(72,244,68)',   // CH6 lime
+        'rgb(255,0,255)',   // CH7 magenta
+        'rgb(0,255,204)'    // CH8 teal
+    ];
+
+    // ── All-Channels chart (Tab 2) ──────────────────────────────────────────
+    var allChW = Math.max(600, $(window).width() - 280);
+    $("#allch-chart-container").html(
+        '<canvas id="allch-canvas" width="' + allChW + '" height="380"></canvas>'
+    );
+
+    var allChChart = new SmoothieChart({
+        minValue: -8500000, maxValue: 8500000,
+        grid: { strokeStyle: 'rgba(255,255,255,0.08)', fillStyle: 'rgb(18,18,18)',
+                lineWidth: 1, millisPerLine: 500, verticalSections: 8 },
+        labels: { fillStyle: 'rgba(255,255,255,0.5)', fontSize: 11 },
+        timestampFormatter: SmoothieChart.timeFormatter
+    });
+    allChChart.streamTo(document.getElementById("allch-canvas"), 300);
+
+    var rawAllChSeries = [];
+    for (var aci = 0; aci < 8; aci++) {
+        var acSeries = new TimeSeries();
+        allChChart.addTimeSeries(acSeries, { strokeStyle: CH_COLORS[aci], lineWidth: 2 });
+        rawAllChSeries.push(acSeries);
+    }
+
+    // ── Per-Channel charts (Tab 3) ──────────────────────────────────────────
+    var perChW = Math.max(500, $(window).width() - 320);
+    var perChCharts = [];
+    var rawPerChSeries = [];
+
+    for (var pci = 0; pci < 8; pci++) {
+        (function(idx) {
+            var rowHtml =
+                '<div class="perch-row">' +
+                '<span class="perch-label" style="color:' + CH_COLORS[idx] + '">CH' + (idx + 1) + '</span>' +
+                '<canvas id="perch-canvas-' + idx + '" width="' + perChW + '" height="130"></canvas>' +
+                '</div>';
+            $("#perch-charts-container").append(rowHtml);
+
+            var pcChart = new SmoothieChart({
+                minValue: -8500000, maxValue: 8500000,
+                grid: { strokeStyle: 'rgba(255,255,255,0.06)', fillStyle: 'rgb(14,14,14)',
+                        lineWidth: 1, millisPerLine: 500, verticalSections: 4 },
+                labels: { fillStyle: 'rgba(255,255,255,0.4)', fontSize: 10 }
+            });
+            pcChart.streamTo(document.getElementById("perch-canvas-" + idx), 300);
+
+            var pcSeries = new TimeSeries();
+            pcChart.addTimeSeries(pcSeries, { strokeStyle: CH_COLORS[idx], lineWidth: 2 });
+
+            perChCharts.push(pcChart);
+            rawPerChSeries.push(pcSeries);
+        })(pci);
+    }
+
 
     //numerical data display
     function displayData() {
