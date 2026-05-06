@@ -607,7 +607,7 @@ $(document).ready(function() {
     );
 
     var allChChart = new SmoothieChart({
-        minValue: -8500000, maxValue: 8500000,
+        millisPerPixel: 4,
         grid: { strokeStyle: 'rgba(255,255,255,0.08)', fillStyle: 'rgb(18,18,18)',
                 lineWidth: 1, millisPerLine: 500, verticalSections: 8 },
         labels: { fillStyle: 'rgba(255,255,255,0.5)', fontSize: 11 },
@@ -637,7 +637,7 @@ $(document).ready(function() {
             $("#perch-charts-container").append(rowHtml);
 
             var pcChart = new SmoothieChart({
-                minValue: -8500000, maxValue: 8500000,
+                millisPerPixel: 4,
                 grid: { strokeStyle: 'rgba(255,255,255,0.06)', fillStyle: 'rgb(14,14,14)',
                         lineWidth: 1, millisPerLine: 500, verticalSections: 4 },
                 labels: { fillStyle: 'rgba(255,255,255,0.4)', fontSize: 10 }
